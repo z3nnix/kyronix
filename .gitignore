@@ -4,6 +4,4 @@
 *.elf
 *.cpio
 kyronix.iso
-user/init
-user/hello
 build/*
