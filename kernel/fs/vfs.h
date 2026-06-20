@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct net_conn; /* forward declaration for inet sockets */
+struct net_conn;
 
 extern char g_cwd[512];
 
@@ -169,9 +169,11 @@ vfs_node_t *fd_get_node(int fd);
 vfs_file_t *fd_get_file(int fd);
 int64_t fd_pread(int fd, void *buf, uint64_t len, uint64_t off);
 int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off);
+int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off);
 int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip);
 bool fd_pollin(int fd);
 bool fd_pollout(int fd);
+bool fd_pollhup(int fd);
 int fd_pipe(int pipefd[2]);
 int fd_socketpair(int sv[2]);
 int fd_eventfd(uint32_t initval, int eflags);

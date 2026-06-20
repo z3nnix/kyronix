@@ -7,7 +7,7 @@
 #define PROC_KSTACK_RSP 40
 #define PROC_USER_RSP   48
 #define PROC_FS_BASE    88
-#define PROC_FPU_STATE  3280
+#define PROC_FPU_STATE  3312
 
 #define CPU_KERNEL_RSP  0
 #define CPU_USER_RSP    8

@@ -9,3 +9,4 @@ kyronix-test.iso
 test_rootfs/
 build/*
 iso_root/*
+rootfs/usr/lib/libLLVM.so.19.1

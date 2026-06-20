@@ -216,7 +216,6 @@ int test_truncate(void) {
     ASSERT_EQ(5, read_file(path, buf, sizeof(buf)));
     ASSERT_STREQ("01234", buf);
 
-    /* enlarge — kernel (ramfs) only shrinks, skip enlarge test */
     /* ftruncate */
     int fd = open(path, O_WRONLY);
     ASSERT_GE(fd, 0);
@@ -341,7 +340,7 @@ int test_chdir_getcwd(void) {
     ASSERT_NOTNULL(getcwd(cwd, sizeof(cwd)));
     ASSERT_STREQ("/", cwd);
 
-    /* fchdir — kernel may not support opening a directory as fd */
+    /* fchdir */
     int fd = open(tmpdir, O_RDONLY);
     if (fd >= 0) {
         ASSERT_EQ(0, fchdir(fd));
@@ -402,7 +401,6 @@ int test_mkdir_rmdir(void) {
 REGISTER_TEST(mkdir_rmdir, "Phase 2: File System");
 
 int test_getdents(void) {
-    /* Use libc opendir/readdir which calls getdents64 under the hood */
     DIR *d = opendir("/");
     ASSERT_NOTNULL(d);
     int count = 0;
@@ -413,8 +411,6 @@ int test_getdents(void) {
 
     /* invalid fd */
     ASSERT_NULL(fdopendir(9999));
-    /* musl returns NULL with errno, but EBADF from kernel */
-
     return 1;
 }
 REGISTER_TEST(getdents, "Phase 2: File System");
@@ -899,7 +895,7 @@ int test_utime_utimensat(void) {
     int ret = utime(path, &times);
     if (ret < 0 && errno == ENOSYS) return 1;
 
-    /* timestamps may be stubbed; just verify the call doesn't crash */
+    /* timestamps may be stubbed; just verify the call doesnt crash */
     struct stat st;
     ASSERT_EQ(0, stat(path, &st));
 
@@ -924,7 +920,6 @@ int test_statx(void) {
     tmpfile_path(path, sizeof(path), "statx_test");
     write_file(path, "statx data");
 
-    /* musl on some platforms lacks statx wrapper; use raw syscall */
 #ifndef SYS_statx
 #define SYS_statx 332
 #endif
@@ -1005,13 +1000,12 @@ int test_sendfile_noffset(void) {
     ASSERT_GE(fd_in, 0);
     ASSERT_GE(fd_out, 0);
 
-    ssize_t ret = sendfile(fd_out, fd_in, NULL, 17);
+    ssize_t ret = sendfile(fd_out, fd_in, NULL, 18); /* "sendfile test data" is 18 bytes */
     if (ret < 0 && (errno == ENOSYS || errno == EINVAL || errno == EBADF || errno == EFAULT))
         goto sfn_done;
-    ASSERT_EQ(ret, 17);
-    ASSERT_EQ(ret, 17);
+    ASSERT_EQ(ret, 18);
     char buf[32];
-    ASSERT_EQ(17, read_file(dst, buf, sizeof(buf)));
+    ASSERT_EQ(18, read_file(dst, buf, sizeof(buf)));
     ASSERT_STREQ("sendfile test data", buf);
 
 sfn_done:

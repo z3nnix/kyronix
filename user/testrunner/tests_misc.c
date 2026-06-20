@@ -41,8 +41,6 @@ int test_set_tid_address(void) {
 REGISTER_TEST(set_tid_address, "Phase 8: Random / Misc");
 
 int test_robust_list(void) {
-    /* struct robust_list_head layout (x86-64):
-       { void *list; void *futex_offset; void *list_op_pending; } = 24 bytes */
     char head[24] __attribute__((aligned(8)));
     void *head_ptr;
     size_t len;

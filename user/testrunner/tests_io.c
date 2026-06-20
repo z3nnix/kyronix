@@ -233,7 +233,7 @@ int test_epoll_basic(void) {
     ev.data.fd = p[0];
     ASSERT_EQ(0, epoll_ctl(epfd, EPOLL_CTL_ADD, p[0], &ev));
 
-    /* epoll_wait with no data — timeout 10ms */
+    /* epoll_wait with no data - timeout 10ms */
     struct epoll_event out;
     int n = epoll_wait(epfd, &out, 1, 10);
     ASSERT_EQ(0, n);

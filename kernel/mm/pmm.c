@@ -121,7 +121,6 @@ void *pmm_alloc_contiguous(uint64_t n) {
 void pmm_free(void *phys) {
     uint64_t page = (uint64_t) phys >> PAGE_SHIFT;
     if (!phys || page >= g_pmm.total_pages) return;
-    if (bitmap_is_free(page)) return;
     bitmap_set_free(page);
     g_pmm.free_pages++;
 }

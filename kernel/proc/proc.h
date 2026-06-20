@@ -56,6 +56,9 @@ typedef struct proc {
     void *blocked_pipe;    /* pipe_t* this proc is sleeping on, null ifnone */
     int blocked_pipe_read; /* 1 = waiting_reader, 0 = waiting_writer */
     uint8_t fpu_state[512] __attribute__((aligned(16)));
+    uint64_t sig_altstack_sp;
+    uint64_t sig_altstack_size;
+    uint8_t on_sigstack; /* currently executing a handler on the alt stack */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

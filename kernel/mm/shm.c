@@ -180,7 +180,7 @@ int sys_shmctl(int shmid, int cmd, void *buf) {
         if (!buf) return -EINVAL;
         memset(buf, 0, 144);                              /* zero out shmid_ds */
         ((uint64_t *) buf)[6] = s->size;                  /* shm_segsz at offset 48 */
-        ((uint64_t *) buf)[13] = (uint64_t) s->ref_count; /* shm_nattch */
+        ((uint64_t *) buf)[11] = (uint64_t) s->ref_count; /* shm_nattch at offset 88 */
         return 0;
     default:
         return -EINVAL;

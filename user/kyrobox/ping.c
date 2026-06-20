@@ -1,5 +1,6 @@
 #include "common.h"
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -50,10 +51,21 @@ int main(int argc, char **argv) {
     if (!host) usage();
 
     struct in_addr dst;
-    if (!inet_aton(host, &dst)) {
-        fprintf(stderr, "ping: %s: invalid address (DNS not yet supported)\n", host);
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_RAW;
+    hints.ai_protocol = IPPROTO_ICMP;
+    int gai = getaddrinfo(host, NULL, &hints, &ai);
+    if (gai) {
+        fprintf(stderr, "ping: %s: %s\n", host, gai_strerror(gai));
         exit(1);
     }
+    dst = ((struct sockaddr_in *) ai->ai_addr)->sin_addr;
+    freeaddrinfo(ai);
+
+    char ipstr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &dst, ipstr, sizeof(ipstr));
 
     int fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (fd < 0) {
@@ -66,7 +78,7 @@ int main(int argc, char **argv) {
     to.sin_family = AF_INET;
     to.sin_addr = dst;
 
-    printf("PING %s: %d data bytes\n", host, ICMP_PAYLOAD_SZ);
+    printf("PING %s (%s): %d data bytes\n", host, ipstr, ICMP_PAYLOAD_SZ);
 
     uint8_t pkt[sizeof(struct icmphdr) + ICMP_PAYLOAD_SZ];
     uint8_t rbuf[1500];
@@ -74,7 +86,7 @@ int main(int argc, char **argv) {
     int64_t t_start = ms_now();
 
     for (int seq = 0; seq < count; seq++) {
-        /* build icmp echo request */
+        // build icmp echo request here
         struct icmphdr *icmp = (struct icmphdr *) pkt;
         memset(icmp, 0, sizeof(*icmp));
         icmp->type = ICMP_ECHO;
@@ -95,7 +107,6 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        /* wait for reply */
         struct pollfd pfd = { .fd = fd, .events = POLLIN };
         int64_t deadline = t_send + PING_TIMEOUT_MS;
 
@@ -110,8 +121,6 @@ int main(int argc, char **argv) {
 
             ssize_t n = recv(fd, rbuf, sizeof(rbuf), 0);
             if (n < 0) break;
-
-            /* raw socket gives us: ip header + icmp */
             if (n < (ssize_t) (sizeof(struct iphdr) + sizeof(struct icmphdr))) continue;
 
             struct iphdr *iph = (struct iphdr *) rbuf;

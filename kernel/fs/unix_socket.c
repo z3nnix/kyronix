@@ -16,6 +16,7 @@
 #define EMFILE 24
 #define ENOENT 2
 #define ENOMEM 12
+#define EOPNOTSUPP 95
 
 #define SOCK_UNBOUND 0
 #define SOCK_BOUND 1
@@ -47,7 +48,8 @@ static struct {
 int fd_socket(int domain, int type, int proto) {
     (void) proto;
     if (domain == 2) return fd_inet_socket(type, proto); /* AF_INET */
-    if (domain != 1 || (type & 0xf) != 1) return -(int) EINVAL;
+    if (domain != 1) return -(int) EINVAL;
+    if ((type & 0xf) != 1) return -(int) EOPNOTSUPP; /* only SOCK_STREAM supported on AF_UNIX */
     unix_sock_t *s = (unix_sock_t *) kcalloc(1, sizeof(unix_sock_t));
     if (!s) return -(int) ENOMEM;
     vfs_node_t *n = vfs_node_alloc_internal("", VFS_TYPE_SOCK, S_IFSOCK | 0666);

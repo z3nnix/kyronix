@@ -18,6 +18,7 @@
 #define EPOLLOUT 0x004U
 #define EPOLLERR 0x008U
 #define EPOLLHUP 0x010U
+#define EPOLLONESHOT 0x40000000U
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_DEL 2
 #define EPOLL_CTL_MOD 3
@@ -133,11 +134,14 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
             if (!got) {
                 if ((ep->w[i].events & EPOLLIN) && fd_pollin(wfd)) got |= EPOLLIN;
                 if ((ep->w[i].events & EPOLLOUT) && fd_pollout(wfd)) got |= EPOLLOUT;
+                if (fd_pollhup(wfd)) got |= EPOLLHUP; /* HUP reported regardless of interest */
             }
             if (got) {
                 events[n].events = got;
                 events[n].data = ep->w[i].data;
                 n++;
+                if (ep->w[i].events & EPOLLONESHOT)
+                    ep->w[i].events &= ~(EPOLLIN | EPOLLOUT); /* disarm until re-armed via MOD */
             }
         }
         if (n > 0 || timeout == 0 || g_ticks >= deadline) return n;

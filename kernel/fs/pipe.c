@@ -58,8 +58,6 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
         p->rpos = (p->rpos + 1) % PIPE_BUFSZ;
         p->count--;
     }
-    // fixed slots reuse
-    /* wake writer that was blocked on full buffer */
     if (p->waiting_writer) {
         proc_t *writer = (proc_t *) p->waiting_writer;
         if (writer->state == PROC_WAITING) writer->state = PROC_READY;

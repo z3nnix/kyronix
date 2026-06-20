@@ -30,9 +30,6 @@
 #define SOCK_DGRAM 2
 #define SOCK_RAW 3
 
-/* ── TCP RX ring ──────────────────────────────────────────────────────────── */
-/* Power-of-two; >= TCP_WND (8*MSS) so a full receive window fits and we apply
-   real flow control instead of dropping (and falsely ACKing) bytes. */
 #define RX_BUF_SZ 16384u
 
 typedef struct {
@@ -61,7 +58,6 @@ static uint32_t ring_pop(rx_ring_t *r, uint8_t *out, uint32_t want) {
     return want;
 }
 
-/* ── UDP datagram queue ───────────────────────────────────────────────────── */
 #define UDP_RX_SLOTS 8
 #define UDP_DGRAM_SZ 2048
 typedef struct {
@@ -71,19 +67,18 @@ typedef struct {
     uint16_t src_port;
 } udp_dgram_t;
 
-/* ── net_conn ─────────────────────────────────────────────────────────────── */
 struct net_conn {
     int type;             /* SOCK_STREAM, SOCK_DGRAM, or SOCK_RAW */
     int proto;            /* IP protocol (SOCK_RAW only) */
-    struct tcp_pcb *pcb;  /* TCP only */
-    struct udp_pcb *upcb; /* UDP only */
-    struct raw_pcb *rpcb; /* RAW only */
+    struct tcp_pcb *pcb;  /* tcp only */
+    struct udp_pcb *upcb; /* udp only */
+    struct raw_pcb *rpcb; /* raw only */
     bool is_server;
     bool peer_closed;
     bool error;
     int err_code;
 
-    rx_ring_t rx; /* TCP byte stream */
+    rx_ring_t rx; /* tcp byte stream */
 
     udp_dgram_t udq[UDP_RX_SLOTS];
     int udq_head, udq_tail; /* head=write, tail=read */
@@ -96,8 +91,6 @@ struct net_conn {
     proc_t *accept_waiter;
 };
 
-/* ── TCP callbacks ────────────────────────────────────────────────────────── */
-
 static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) {
     net_conn_t *c = (net_conn_t *) arg;
     if (!c) return ERR_OK;
@@ -109,11 +102,6 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
         return ERR_OK;
     }
 
-    /* Flow control: only accept the whole chain if it fits the ring. Otherwise
-       refuse (ERR_MEM) WITHOUT freeing or ACKing - lwIP retains the data and
-       re-delivers later, and the TCP window stays closed (backpressure). This
-       replaces the old bug of dropping bytes yet still calling tcp_recved(),
-       which silently corrupted bulk streams (e.g. TLS records). */
     uint32_t freelen = (RX_BUF_SZ - 1u) - ring_avail(&c->rx);
     if (p->tot_len > freelen) {
         if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING)
@@ -191,8 +179,6 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
     return ERR_OK;
 }
 
-/* ── UDP callback ─────────────────────────────────────────────────────────── */
-
 static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip4_addr_t *addr,
                         u16_t port) {
     (void) pcb;
@@ -206,7 +192,7 @@ static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip
     if (next == c->udq_tail) {
         pbuf_free(p);
         return;
-    } /* queue full, drop */
+    }
 
     udp_dgram_t *slot = &c->udq[c->udq_head];
     uint16_t copy = (p->tot_len < UDP_DGRAM_SZ) ? (uint16_t) p->tot_len : (uint16_t) (UDP_DGRAM_SZ);
@@ -220,12 +206,10 @@ static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip
     if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
 }
 
-/* ── RAW callback ─────────────────────────────────────────────────────────── */
-
 static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip4_addr_t *addr) {
     (void) pcb;
     net_conn_t *c = (net_conn_t *) arg;
-    if (!c || !p) return 0; /* 0 = not consumed */
+    if (!c || !p) return 0;
 
     int next = (c->udq_head + 1) & (UDP_RX_SLOTS - 1);
     if (next == c->udq_tail) { return 0; } /* queue full, leave for others */
@@ -243,8 +227,6 @@ static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const
     if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
     return 1; /* consumed */
 }
-
-/* ── allocation ──────────────────────────────────────────────────────────── */
 
 int fd_inet_socket(int type, int flags) {
     int sock_type = type & 0xF;
@@ -271,7 +253,6 @@ int fd_inet_socket(int type, int flags) {
         }
         udp_recv(c->upcb, on_udp_recv, c);
     } else {
-        /* SOCK_RAW - proto is the IP protocol number */
         c->rpcb = raw_new((uint8_t) (flags & 0xFF));
         if (!c->rpcb) {
             kfree(c);
@@ -303,18 +284,12 @@ int fd_inet_socket(int type, int flags) {
         kfree(c);
         return -(int) ENOMEM;
     }
-
-    /* Honor SOCK_NONBLOCK/SOCK_CLOEXEC (same bit values as O_NONBLOCK/O_CLOEXEC).
-       musl's DNS resolver opens the socket SOCK_NONBLOCK and drains with recvmsg
-       expecting EAGAIN; without this it blocks forever (getaddrinfo hangs). */
     f->flags = O_RDWR | (type & O_NONBLOCK);
     f->cloexec = (type & O_CLOEXEC) ? 1 : 0;
     f->inet = c;
     vfs_fd_install(fd, f);
     return fd;
 }
-
-/* ── read / write ────────────────────────────────────────────────────────── */
 
 int64_t inet_fd_read(net_conn_t *c, void *buf, uint64_t len, int fd_flags) {
     if (!c) return -(int64_t) ENOTCONN;
@@ -412,8 +387,6 @@ bool inet_poll_out(net_conn_t *c) {
 
 int inet_get_type(net_conn_t *c) { return c ? c->type : 1; }
 
-/* ── socket operations ───────────────────────────────────────────────────── */
-
 int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
     if (!c) return -(int64_t) EBADF;
 
@@ -423,7 +396,6 @@ int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
 
     if (c->type == SOCK_DGRAM) {
         if (!c->upcb) return -(int64_t) EBADF;
-        /* UDP "connect" just sets default remote */
         err_t e = udp_connect(c->upcb, &dst, port);
         return (e == ERR_OK) ? 0 : -(int64_t) EINVAL;
     }

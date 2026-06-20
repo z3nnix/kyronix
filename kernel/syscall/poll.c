@@ -11,6 +11,7 @@
 
 #define POLLIN 0x0001
 #define POLLOUT 0x0004
+#define POLLHUP 0x0010
 #define POLLNVAL 0x0020
 
 extern volatile uint64_t g_ticks;
@@ -25,6 +26,7 @@ static int poll_check(struct pollfd_s *fds, uint64_t nfds) {
         } else {
             if ((fds[i].events & POLLIN) && fd_pollin(fds[i].fd)) fds[i].revents |= POLLIN;
             if ((fds[i].events & POLLOUT) && fd_pollout(fds[i].fd)) fds[i].revents |= POLLOUT;
+            if (fd_pollhup(fds[i].fd)) fds[i].revents |= POLLHUP; /* HUP reported regardless of events */
         }
         if (fds[i].revents) ready++;
     }
@@ -50,10 +52,7 @@ int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout) {
             cli();
         }
         p->wakeup_tick = 0;
-        if (nfds) {
-            if (!uptr_ok_w(fds, nfds * sizeof(*fds))) return -(int64_t) EFAULT;
-            ready = poll_check(fds, nfds);
-        }
+        if (nfds) ready = poll_check(fds, nfds);
     }
     return (int64_t) ready;
 }

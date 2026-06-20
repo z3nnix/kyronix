@@ -486,7 +486,6 @@ int test_true(void) {
 REGISTER_TEST(true, "Phase 9: Utilities");
 
 int test_tty(void) {
-    /* Not on a TTY in test runner — should return 1 */
     char buf[32];
     int ret = capture_cmd((char *[]) { "tty", "-s", NULL }, buf, sizeof(buf));
     if (ret != 0) return 1;

@@ -113,7 +113,7 @@ int64_t sys_copy_file_range(int infd, uint64_t *off_in, int outfd, uint64_t *off
     uint64_t avail = src->size - rin;
     if (len > avail) len = avail;
     uint64_t rout = off_out ? *off_out : (fd_get_file(outfd) ? fd_get_file(outfd)->pos : 0);
-    int64_t w = fd_pwrite(outfd, src->data + rin, len, rout);
+    int64_t w = fd_pwrite_kbuf(outfd, src->data + rin, len, rout); /* src->data is a kernel pointer */
     if (w > 0) {
         if (off_in)
             *off_in = rin + (uint64_t) w;

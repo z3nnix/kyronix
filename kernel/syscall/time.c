@@ -65,6 +65,41 @@ int64_t sys_nanosleep(void *r, void *m) {
     return 0;
 }
 
+int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) {
+    (void) clockid;
+    (void) rem;
+    if (!req) return 0;
+    if (!uptr_ok(req, 16)) return -(int64_t) EFAULT;
+    uint64_t sec = ((const uint64_t *) req)[0];
+    uint64_t nsec = ((const uint64_t *) req)[1];
+    uint64_t target_ms = sec * 1000 + nsec / 1000000;
+
+    uint64_t ms;
+    if (flags & 1) { /* TIMER_ABSTIME: req is an absolute time, sleep until then */
+        uint64_t now_ms = g_epoch_base * 1000 + g_ticks;
+        ms = target_ms > now_ms ? target_ms - now_ms : 0;
+    } else {
+        ms = target_ms;
+    }
+    if (ms == 0) return 0;
+
+    proc_t *p = g_current_proc;
+    if (!p) return 0;
+    uint64_t deadline = g_ticks + ms;
+    p->wakeup_tick = deadline;
+    while (g_ticks < deadline) {
+        if (proc_next_ready(p))
+            sched_yield_blocking();
+        else {
+            sti();
+            hlt();
+            cli();
+        }
+    }
+    p->wakeup_tick = 0;
+    return 0;
+}
+
 int64_t sys_getitimer(int w, void *v) {
     (void) w;
     proc_t *p = g_current_proc;
@@ -123,7 +158,7 @@ int64_t sys_times(void *b) {
         if (!uptr_ok_w(b, 32)) return -(int64_t) EFAULT;
         memset(b, 0, 32);
     }
-    return 0;
+    return (int64_t) (g_ticks + 1); /* monotonic tick count, always > 0 */
 }
 
 int64_t sys_alarm(uint32_t seconds) {

@@ -43,8 +43,6 @@
 #include <unistd.h>
 #include <utime.h>
 
-/* asm/prctl.h for ARCH_GET_FS etc. — may live under asm/ or linux/ */
-/* reboot() command constant (musl may not define it) */
 #ifndef LINUX_REBOOT_CMD_RESTART
 #define LINUX_REBOOT_CMD_RESTART 0x01234567
 #endif

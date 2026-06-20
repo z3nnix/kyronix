@@ -26,6 +26,7 @@ void cpu_enable_sse(void) {
     cr0 = (cr0 & ~(1ULL << 2)) | (1ULL << 1);
     write_cr0(cr0);
     write_cr4(read_cr4() | (1ULL << 9) | (1ULL << 10));
+    fpu_init(); // mask all simd exceptions in the live mxcsr
 }
 
 void syscall_init(void) {

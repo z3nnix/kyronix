@@ -88,7 +88,6 @@ static vfs_node_t *dir_find(vfs_node_t *dir, const char *name) {
 
 vfs_node_t *vfs_dir_find_internal(vfs_node_t *dir, const char *name) { return dir_find(dir, name); }
 
-/* atomically bump refcnt on the node about to be returned from lookup. */
 static vfs_node_t *lookup_ref(vfs_node_t *n) {
     if (!n) return NULL;
     uint64_t f = irq_save();
@@ -746,6 +745,31 @@ int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off) {
     return (int64_t) len;
 }
 
+/* like fd_pwrite but buf is a kernel pointer, so skip the user-pointer check */
+int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off) {
+    vfs_file_t *f = fd_get(fd);
+    if (!f) return -(int64_t) EBADF;
+    if (f->pipe) return -(int64_t) ESPIPE;
+    if (len == 0) return 0;
+    vfs_node_t *n = f->node;
+    if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
+    uint64_t end = off + len;
+    if (end > n->capacity) {
+        uint64_t newcap = (end + 4095) & ~4095ULL;
+        uint8_t *newdata = (uint8_t *) kmalloc(newcap);
+        if (!newdata) return -(int64_t) ENOSPC;
+        if (n->data) {
+            memcpy(newdata, n->data, n->size);
+            kfree(n->data);
+        }
+        n->data = newdata;
+        n->capacity = newcap;
+    }
+    memcpy(n->data + off, buf, len);
+    if (end > n->size) n->size = end;
+    return (int64_t) len;
+}
+
 bool fd_pollin(int fd) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return false;
@@ -776,6 +800,15 @@ bool fd_pollout(int fd) {
         return f->pipe_end == PIPE_END_WRITE && f->pipe->count < PIPE_BUFSZ &&
                f->pipe->read_refs > 0;
     return f->node != NULL;
+}
+
+/* POLLHUP/EPOLLHUP: a pipe/socket read end whose writers have all gone away */
+bool fd_pollhup(int fd) {
+    vfs_file_t *f = fd_get(fd);
+    if (!f) return false;
+    if (f->wpipe) return f->pipe->write_refs == 0;
+    if (f->pipe) return f->pipe_end == PIPE_END_READ && f->pipe->write_refs == 0;
+    return false;
 }
 
 static void pipe_drop_write(pipe_t *p) {
@@ -1029,7 +1062,9 @@ int fd_open(const char *path, int flags, int mode) {
         return r;
     }
 
-    if (n->type == VFS_TYPE_DIR && !(flags & O_DIRECTORY)) {
+    /* a directory may be opened read-only (e.g. for fstat/getdents); only
+     * reject it when write access is requested. */
+    if (n->type == VFS_TYPE_DIR && (flags & O_ACCMODE) != O_RDONLY) {
         node_unref(n);
         return -(int) EISDIR;
     }
@@ -1204,6 +1239,12 @@ int64_t fd_write(int fd, const void *buf, uint64_t len) {
     if (f->tfd) return -(int64_t) EINVAL; /* timerfd not writable via write() */
     if (f->wpipe && (f->flags & O_NONBLOCK) && f->wpipe->read_refs > 0) {
         uint64_t space = PIPE_BUFSZ - f->wpipe->count;
+        if (space == 0) return -(int64_t) EAGAIN;
+        if (len > space) len = space;
+    }
+    if (f->pipe && !f->wpipe && (f->flags & O_NONBLOCK) && f->pipe_end == PIPE_END_WRITE &&
+        f->pipe->read_refs > 0) {
+        uint64_t space = PIPE_BUFSZ - f->pipe->count;
         if (space == 0) return -(int64_t) EAGAIN;
         if (len > space) len = space;
     }

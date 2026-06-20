@@ -62,7 +62,7 @@ int test_sigaction_sa_restart(void) {
         _exit(0);
     }
 
-    /* both children are alive — read should be restarted by SA_RESTART */
+    /* both children are alive - read should be restarted by SA_RESTART */
     char c;
     ssize_t n = read(p[0], &c, 1);
     if (n < 0 && errno == EINTR) {
@@ -90,12 +90,19 @@ REGISTER_TEST(sigaction_sa_restart, "Phase 4: Signal Handling");
 int test_sigprocmask(void) {
     sigset_t newmask, oldmask, pending;
 
+    /* install a handler so the unblocked SIGUSR1 is caught, not fatal */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handler_usr1;
+    sigemptyset(&sa.sa_mask);
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
+
     /* Block SIGUSR1 */
     sigemptyset(&newmask);
     sigaddset(&newmask, SIGUSR1);
     ASSERT_EQ(0, sigprocmask(SIG_BLOCK, &newmask, &oldmask));
 
-    /* Send SIGUSR1 to self — should be pending */
+    /* Send SIGUSR1 to self - should be pending */
     kill(getpid(), SIGUSR1);
 
     /* Check pending */
@@ -116,6 +123,13 @@ REGISTER_TEST(sigprocmask, "Phase 4: Signal Handling");
 int test_sigpending(void) {
     sigset_t mask, pending;
 
+    /* ignore SIGTERM so unblocking the pending one doesn't terminate us */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_IGN;
+    sigemptyset(&sa.sa_mask);
+    ASSERT_EQ(0, sigaction(SIGTERM, &sa, NULL));
+
     sigemptyset(&mask);
     sigaddset(&mask, SIGTERM);
     ASSERT_EQ(0, sigprocmask(SIG_BLOCK, &mask, NULL));
@@ -133,6 +147,13 @@ REGISTER_TEST(sigpending, "Phase 4: Signal Handling");
 int test_sigsuspend(void) {
     sigset_t mask;
     sigemptyset(&mask);
+
+    /* install a handler so the delivered SIGUSR1 is caught, not fatal */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handler_usr1;
+    sigemptyset(&sa.sa_mask);
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
 
     /* Schedule a signal from child */
     pid_t pid = fork();
@@ -365,9 +386,6 @@ int test_waitpid_interrupted(void) {
 
     sig_usr1_caught = 0;
     int status;
-    /* waitpid may be interrupted by SIGUSR1; if SA_RESTART not set,
-       waitpid should return -1 with EINTR. If SA_RESTART is set,
-       it restarts. Either is acceptable — we just check the signal arrived. */
 
     /* We don't use SA_RESTART here, so EINTR is expected */
     pid_t ret = waitpid(child, &status, 0);
@@ -398,9 +416,9 @@ int test_fork_sigmask(void) {
     ASSERT_GE(pid, 0);
 
     if (pid == 0) {
-        /* child should inherit blocked mask */
+        /* child should inherit blocked mask; read it back via sigprocmask */
         close(p[0]);
-        ASSERT_EQ(0, sigpending(&child_mask));
+        ASSERT_EQ(0, sigprocmask(SIG_BLOCK, NULL, &child_mask));
         int blocked = sigismember(&child_mask, SIGUSR1);
         write(p[1], &blocked, sizeof(blocked));
         close(p[1]);
@@ -428,7 +446,6 @@ static void handler_sigchld(int sig) {
 }
 
 int test_sigchld(void) {
-    /* SIGCHLD default is ignored — test that it's not delivered by default */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handler_sigchld;

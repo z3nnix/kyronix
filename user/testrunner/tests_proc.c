@@ -5,7 +5,6 @@ int test_fork_basic(void) {
     ASSERT_GE(pid, 0);
 
     if (pid == 0) {
-        /* child */
         _exit(42);
     }
 
@@ -58,7 +57,6 @@ int test_fork_cow(void) {
     ASSERT_GE(pid, 0);
 
     if (pid == 0) {
-        /* child modifies the variable — COW should separate */
         shared = 99;
         _exit(shared == 42 ? 1 : 0);
     }
@@ -120,7 +118,6 @@ int test_vfork(void) {
     ASSERT_GE(pid, 0);
 
     if (pid == 0) {
-        /* child — careful: vfork suspends parent, don't modify parent memory */
         execlp("cat", "cat", path, NULL);
         _exit(127);
     }
@@ -167,7 +164,6 @@ int test_execve_bad(void) {
         char *argv[] = { path, NULL };
         char *envp[] = { NULL };
         execve(path, argv, envp);
-        /* musl may return ENOEXEC or we fall through to _exit */
         _exit(127);
     }
 
@@ -202,7 +198,7 @@ int test_wait_nohang(void) {
         _exit(0);
     }
 
-    /* WNOHANG should return 0 since child hasn't exited yet */
+    /* WNOHANG should return 0 since child hasnt exited yet */
     int status;
     ASSERT_EQ(0, waitpid(pid, &status, WNOHANG));
 
@@ -267,7 +263,6 @@ int test_getuid_getgid(void) {
     gid_t gid = getgid();
     gid_t egid = getegid();
 
-    /* Running as root in test environment */
     ASSERT_EQ(0, uid);
     ASSERT_EQ(0, euid);
     ASSERT_EQ(0, gid);
@@ -363,7 +358,7 @@ int test_getgroups_setgroups(void) {
     ASSERT_EQ(0, setgroups(1, (gid_t[]) { 0 }));
 
     n = getgroups(16, list);
-    /* kernel may stub getgroups returning 0 — accept either */
+    /* kernel may stub getgroups returning 0 - accept either */
     if (n == 0) return 1;
     ASSERT_GE(n, 1);
     ASSERT_EQ(0, list[0]);
@@ -372,7 +367,6 @@ int test_getgroups_setgroups(void) {
 REGISTER_TEST(getgroups_setgroups, "Phase 3: Process & Scheduling");
 
 int test_setfsuid_setfsgid(void) {
-    /* setfsuid/setfsgid via syscall (musl may not provide wrappers) */
     ASSERT_EQ(0, syscall(SYS_setfsuid, 0));
     ASSERT_EQ(0, syscall(SYS_setfsgid, 0));
     ASSERT_EQ(0, syscall(SYS_setfsuid, 0));
@@ -392,7 +386,7 @@ int test_prctl(void) {
     char name[17] = {};
     int ret = prctl(PR_GET_NAME, name);
     if (ret < 0 && errno == ENOSYS) return 1;
-    /* kernel may stub prctl — accept zero-length name */
+    /* kernel may stub prctl - accept zero-length name */
     if (strlen(name) == 0) return 1;
     ASSERT_GT(strlen(name), 0);
 
@@ -405,7 +399,7 @@ int test_prctl(void) {
 REGISTER_TEST(prctl, "Phase 3: Process & Scheduling");
 
 int test_arch_prctl(void) {
-    /* ARCH_GET_FS via syscall — should succeed (TLS is set by libc) */
+    /* ARCH_GET_FS via syscall - should succeed (tls is set by libc) */
     unsigned long fs_base;
     long ret = syscall(SYS_arch_prctl, ARCH_GET_FS, &fs_base);
     if (ret < 0 && errno == ENOSYS) return 1;
@@ -498,8 +492,6 @@ int test_mprotect(void) {
     volatile unsigned char val = ((volatile unsigned char *) p)[0];
     (void) val;
 
-    /* Write should cause SIGSEGV, but we'll trust the kernel */
-    /* Change back to rw */
     ASSERT_EQ(0, mprotect(p, sz, PROT_READ | PROT_WRITE));
     ((unsigned char *) p)[0] = 0x42;
 
@@ -557,7 +549,7 @@ int test_madvise(void) {
     void *p = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(p, MAP_FAILED);
 
-    /* MADV_DONTNEED — hint, should succeed */
+    /* MADV_DONTNEED - hint, should succeed */
     ASSERT_EQ(0, madvise(p, sz, MADV_DONTNEED));
     ASSERT_EQ(0, madvise(p, sz, MADV_WILLNEED));
     ASSERT_EQ(0, madvise(p, sz, MADV_SEQUENTIAL));
@@ -571,7 +563,6 @@ REGISTER_TEST(madvise, "Phase 3: Process & Scheduling");
 int test_iopl_ioperm(void) {
     long ret;
 
-    /* iopl via syscall — in QEMU this should succeed for root */
     ret = syscall(SYS_iopl, 3);
     if (ret < 0 && (errno == ENOSYS || errno == EPERM)) return 1;
     ASSERT_EQ(0, ret);

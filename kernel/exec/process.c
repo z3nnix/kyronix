@@ -1,4 +1,5 @@
 #include "process.h"
+#include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "elf.h"
@@ -196,5 +197,6 @@ int process_exec(const void *data, uint64_t size, const char *name) {
     cpu_set_kernel_stack(p->kstack_top);
 
     vmm_switch(p->space);
+    fpu_init();
     enter_userspace(res.entry, rsp, 0x202ULL);
 }

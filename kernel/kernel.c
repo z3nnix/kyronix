@@ -18,10 +18,12 @@
 #include "drivers/serial.h"
 #include "drivers/tty.h"
 #include "drivers/uio.h"
+#include "drivers/ahci.h"
 #include "drivers/virtio_net.h"
 #include "drivers/vt.h"
 #include "exec/process.h"
 #include "fs/cpio.h"
+#include "fs/ext2.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "lib/log.h"
@@ -183,6 +185,8 @@ void kmain(void) {
     }
     pci_enumerate();
     kstatus("Enumerating PCI", true);
+    ahci_init();
+    kstatus("Initialising AHCI", ahci_ready());
     virtnet_init();
     kstatus("virtio-net", virtnet_ready());
     net_init();
@@ -321,6 +325,14 @@ void kmain(void) {
     } else {
         kstatus("Loading initrd", false);
         log_warn("no initrd module");
+    }
+
+    {
+        int disk = ahci_first_disk();
+        if (disk >= 0) {
+            bool ok = ext2_mount(disk, "/mnt");
+            kstatus("Mounting ext2 at /mnt", ok);
+        }
     }
 
     {

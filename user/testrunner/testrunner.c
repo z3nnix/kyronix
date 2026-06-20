@@ -76,7 +76,6 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
     close(p[1]);
     failure_pipe[1] = -1;
 
-    /* Poll-based timeout (no syscall dependency — pure iteration count) */
     int status = 0;
     for (int iter = 0; iter < 20000000; iter++) {
         pid_t ret = waitpid(pid, &status, WNOHANG);
@@ -84,7 +83,6 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
         if (ret < 0) break;
         sched_yield();
     }
-    /* If the loop exhausted without the child exiting, kill it */
     if (!WIFEXITED(status) && !WIFSIGNALED(status)) {
         kill(pid, SIGKILL);
         waitpid(pid, &status, 0);

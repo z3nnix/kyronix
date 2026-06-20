@@ -6,6 +6,13 @@ export LC_ALL=C
 export IMLIB2_SHM_OPT=0
 export PATH=/usr/bin:/bin:/sbin
 
+# No GPU/DRM in this VM - force Mesa software rendering (llvmpipe).
+# The X server needs these too (it loads the swrast GLX provider); the
+# xterm/xclock/twm clients started below inherit them from here.
+export LIBGL_ALWAYS_SOFTWARE=1
+export GALLIUM_DRIVER=llvmpipe
+export MESA_LOADER_DRIVER_OVERRIDE=swrast
+
 mkdir -p /var/log
 exec > /var/log/startx.log 2>&1
 

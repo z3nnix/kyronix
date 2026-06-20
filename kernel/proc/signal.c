@@ -35,7 +35,11 @@ void proc_send_signal(struct proc *p, int sig) {
 static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t user_rsp = cpu_get_user_rsp();
 
-    uint64_t sp = user_rsp - 128 - sizeof(rt_sigframe_t);
+    bool use_alt = (p->sig_actions[sig - 1].sa_flags & SA_ONSTACK) && p->sig_altstack_size &&
+                   !p->on_sigstack;
+    uint64_t base = use_alt ? p->sig_altstack_sp + p->sig_altstack_size : user_rsp - 128;
+
+    uint64_t sp = base - sizeof(rt_sigframe_t);
     sp = ((sp - 8) & ~(uint64_t) 0xF) + 8;
 
     if (!uptr_ok_w((void *) sp, sizeof(rt_sigframe_t))) proc_do_exit(-SIGSEGV);
@@ -80,6 +84,8 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     f->r11 = 0x202ULL;
 
     cpu_set_user_rsp(sp);
+
+    if (use_alt) p->on_sigstack = 1;
 
     if (p->sig_actions[sig - 1].sa_flags & SA_RESETHAND)
         p->sig_actions[sig - 1].sa_handler = SIG_DFL;
