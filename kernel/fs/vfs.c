@@ -8,6 +8,7 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mm/heap.h"
+#include "proc/jail.h"
 #include "proc/proc.h"
 #include "procfs.h"
 #include "syscall/syscall.h"
@@ -209,21 +210,27 @@ static bool may_change_mode(vfs_node_t *n) {
 }
 
 static void vfs_abs_path(char *out, size_t sz, const char *in) {
+    const char *root = jail_root_current();
     if (!in || in[0] == '/') {
-        strncpy(out, in ? in : "", sz - 1);
+        if (root[0])
+            snprintf(out, sz, "%s%s", root, in ? in : "");
+        else {
+            strncpy(out, in ? in : "", sz - 1);
+            out[sz - 1] = '\0';
+        }
+    } else {
+        const char *cwd = (g_current_proc && g_current_proc->cwd[0]) ? g_current_proc->cwd : g_cwd;
+        size_t cl = strlen(cwd);
+        if (cl >= sz) {
+            out[0] = '\0';
+            return;
+        }
+        memcpy(out, cwd, cl);
+        if (out[cl - 1] != '/') out[cl++] = '/';
+        strncpy(out + cl, in, sz - cl - 1);
         out[sz - 1] = '\0';
-        return;
     }
-    const char *cwd = (g_current_proc && g_current_proc->cwd[0]) ? g_current_proc->cwd : g_cwd;
-    size_t cl = strlen(cwd);
-    if (cl >= sz) {
-        out[0] = '\0';
-        return;
-    }
-    memcpy(out, cwd, cl);
-    if (out[cl - 1] != '/') out[cl++] = '/';
-    strncpy(out + cl, in, sz - cl - 1);
-    out[sz - 1] = '\0';
+    if (root[0]) jail_canon_clamp(out, sz, root);
 }
 
 static int vfs_node_path(vfs_node_t *n, char *buf, size_t sz) {
@@ -814,10 +821,7 @@ bool fd_pollhup(int fd) {
 static void pipe_drop_write(pipe_t *p) {
     if (!p) return;
     if (p->write_refs) p->write_refs--;
-    if (p->write_refs == 0 && p->waiting_reader) {
-        proc_t *reader = (proc_t *) p->waiting_reader;
-        if (reader->state == PROC_WAITING) reader->state = PROC_READY;
-    }
+    if (p->write_refs == 0) pipe_wake(p, 1); /* EOF: wake all blocked readers */
 }
 
 void vfs_pipe_drop_write(pipe_t *p) { pipe_drop_write(p); }
@@ -1016,7 +1020,7 @@ const char *vfs_copy_user_path(const char *path, char *kbuf) {
     return kbuf;
 }
 
-int fd_open(const char *path, int flags, int mode) {
+static int fd_open_impl(const char *path, int flags, int mode, bool reroot) {
     char _pbuf[512];
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
 
@@ -1032,22 +1036,28 @@ int fd_open(const char *path, int flags, int mode) {
         return fd_dup(src);
     }
 
-    vfs_node_t *n = (flags & O_NOFOLLOW) ? vfs_lookup_nofollow(path) : vfs_lookup(path);
+    /* re-root through the jail (if any) before resolving; host procs are unchanged */
+    char abspath[512];
+    const char *lpath = path;
+    if (reroot) {
+        vfs_abs_path(abspath, sizeof(abspath), path);
+        if (abspath[0]) lpath = abspath;
+    }
+
+    vfs_node_t *n = (flags & O_NOFOLLOW) ? vfs_lookup_nofollow(lpath) : vfs_lookup(lpath);
     bool from_lookup = (n != NULL);
 
     if (!n) {
         if (!(flags & O_CREAT)) return -(int) ENOENT;
-        char abspath[512];
-        vfs_abs_path(abspath, sizeof(abspath), path);
         const char *leaf;
-        vfs_node_t *parent = parent_of(abspath[0] ? abspath : path, &leaf);
+        vfs_node_t *parent = parent_of(lpath, &leaf);
         (void) leaf;
         if (!parent || !may_create_in(parent)) {
             node_unref(parent);
             return -(int) EACCES;
         }
         node_unref(parent);
-        n = vfs_create_file(abspath[0] ? abspath : path, mode, NULL, 0);
+        n = vfs_create_file(lpath, mode, NULL, 0);
         if (!n) return -(int) ENOMEM;
         node_ref(n); /* ref for the fd; create_file returns unrefed node */
     } else {
@@ -1102,6 +1112,13 @@ int fd_open(const char *path, int flags, int mode) {
 
     g_fds[fd] = f;
     return fd;
+}
+
+int fd_open(const char *path, int flags, int mode) { return fd_open_impl(path, flags, mode, true); }
+
+/* kernel-internal: open a host-absolute path, bypassing jail re-rooting */
+int fd_open_host(const char *path, int flags, int mode) {
+    return fd_open_impl(path, flags, mode, false);
 }
 
 int fd_openat(int dirfd, const char *path, int flags, int mode) {
@@ -1696,5 +1713,7 @@ int at_resolve(int dirfd, const char *path, char *out, size_t sz) {
     memcpy(out, dirpath, dl);
     if (out[dl - 1] != '/') out[dl++] = '/';
     strcpy(out + dl, path);
+    const char *root = jail_root_current(); /* dirpath already host-rooted; just clamp ".." */
+    if (root[0]) jail_canon_clamp(out, sz, root);
     return 0;
 }

@@ -34,5 +34,6 @@ void pipe_free(pipe_t *p);
 int64_t pipe_read(pipe_t *p, void *buf, uint64_t len);
 int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip);
 int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len);
+void pipe_wake(pipe_t *p, int want_read); /* wake all procs blocked on p in one direction */
 int pipe_anc_send(pipe_t *p, void **files, int nfds);
 int pipe_anc_recv(pipe_t *p, void **out, int max);

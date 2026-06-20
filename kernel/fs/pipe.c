@@ -28,6 +28,16 @@ static bool pipe_valid(pipe_t *p) {
     return p->magic == PIPE_MAGIC;
 }
 
+/* wake every proc blocked on this pipe in one direction (want_read=1 -> readers) */
+void pipe_wake(pipe_t *p, int want_read) {
+    for (int i = 0; i < PROC_MAX; i++) {
+        proc_t *t = &g_proctable[i];
+        if (t->state != PROC_WAITING || t->blocked_pipe != p) continue;
+        if (t->blocked_pipe_read != want_read) continue;
+        t->state = PROC_READY;
+    }
+}
+
 int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
     if (!pipe_valid(p)) return -(int64_t) EIO;
     uint8_t *out = (uint8_t *) buf;
@@ -58,10 +68,7 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
         p->rpos = (p->rpos + 1) % PIPE_BUFSZ;
         p->count--;
     }
-    if (p->waiting_writer) {
-        proc_t *writer = (proc_t *) p->waiting_writer;
-        if (writer->state == PROC_WAITING) writer->state = PROC_READY;
-    }
+    pipe_wake(p, 0); /* space freed: wake all blocked writers */
 
     return (int64_t) done;
 }
@@ -121,6 +128,7 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
                 _wp->blocked_pipe_read = 0;
             }
             p->waiting_writer = _wp;
+            pipe_wake(p, 1); /* let readers drain so space frees up */
             sched_yield_blocking();
             p->waiting_writer = NULL;
             if (_wp) _wp->blocked_pipe = NULL;
@@ -128,13 +136,9 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
         uint32_t wpos = (p->rpos + p->count) % PIPE_BUFSZ;
         p->buf[wpos] = in[done++];
         p->count++;
-
-        if (p->waiting_reader) {
-            proc_t *reader = (proc_t *) p->waiting_reader;
-            if (reader->state == PROC_WAITING) reader->state = PROC_READY;
-        }
     }
 
+    pipe_wake(p, 1); /* data available: wake all blocked readers */
     return (int64_t) done;
 }
 

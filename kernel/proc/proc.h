@@ -59,6 +59,8 @@ typedef struct proc {
     uint64_t sig_altstack_sp;
     uint64_t sig_altstack_size;
     uint8_t on_sigstack; /* currently executing a handler on the alt stack */
+    uint32_t jail_id;    /* 0 = host; appended at end so sched.S offsets stay fixed */
+    uint8_t jail_exempt; /* inherited; init=1, suppresses auto-isolation */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

@@ -50,7 +50,7 @@ static void mouse_irq(int irq, void *arg) {
     /* X/Y overflow bits set -> movement value is garbage, discard the packet */
     if (flags & 0xC0) return;
 
-    /* 9-bit two's-complement deltas: high (sign) bit lives in the flags byte */
+    /* 9-bit twos-complement deltas: high (sign) bit lives in the flags byte */
     int dx = g_pkt[1] - ((flags & 0x10) ? 256 : 0);
     int dy = g_pkt[2] - ((flags & 0x20) ? 256 : 0);
     dy = -dy; /* Y is inverted vs screen coordinates */

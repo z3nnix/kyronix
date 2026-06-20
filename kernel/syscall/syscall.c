@@ -21,6 +21,7 @@
 #include "mm/pmm.h"
 #include "mm/vma.h"
 #include "mm/vmm.h"
+#include "proc/jail.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
 
@@ -396,6 +397,8 @@ static int64_t sys_fork_at(syscall_frame_t* f, uint64_t child_stack)
     proc_t* parent = cur();
     if (!parent)
         return -(int64_t) ENOMEM;
+    if (!jail_can_fork(parent->jail_id))
+        return -(int64_t) EAGAIN;
 
     proc_t* child = proc_alloc(parent->pid);
     if (!child)
@@ -428,6 +431,9 @@ static int64_t sys_fork_at(syscall_frame_t* f, uint64_t child_stack)
     child->umask = parent->umask;
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
+    child->jail_id = parent->jail_id;
+    child->jail_exempt = parent->jail_exempt;
+    jail_ref(child->jail_id);
 
     uint8_t* ksp = child->kstack + KSTACK_SIZE;
 
@@ -483,6 +489,8 @@ static int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t* ptid,
         return -(int64_t)EFAULT;
     if ((flags & (CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID)) && ctid && !uptr_ok_w(ctid, sizeof(*ctid)))
         return -(int64_t)EFAULT;
+    if (!jail_can_fork(parent->jail_id))
+        return -(int64_t) EAGAIN;
 
     proc_t* child = proc_alloc(parent->pid);
     if (!child)
@@ -518,6 +526,9 @@ static int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t* ptid,
     child->umask = parent->umask;
     memcpy(child->cwd,      parent->cwd,      sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
+    child->jail_id = parent->jail_id;
+    child->jail_exempt = parent->jail_exempt;
+    jail_ref(child->jail_id);
 
     if ((flags & CLONE_PARENT_SETTID) && ptid) *ptid = child->pid;
     if ((flags & CLONE_CHILD_SETTID)  && ctid) *ctid = child->pid;
@@ -565,18 +576,23 @@ static bool path_abs(char* out, const char* in)
     char tmp[512];
     if (!copy_user_path(tmp, in))
         return false;
+    const char* root = jail_root_current();
     if (tmp[0] == '/') {
-        memcpy(out, tmp, sizeof(tmp));
-        return true;
+        if (root[0]) snprintf(out, 512, "%s%s", root, tmp);
+        else memcpy(out, tmp, sizeof(tmp));
+    } else {
+        proc_t* p = cur();
+        const char* cwd = (p && p->cwd[0]) ? p->cwd : "/";
+        size_t cl = strlen(cwd);
+        if (cl >= 511) { out[0] = '/'; out[1] = '\0'; }
+        else {
+            memcpy(out, cwd, cl);
+            if (out[cl - 1] != '/') out[cl++] = '/';
+            strncpy(out + cl, tmp, 511 - cl);
+            out[511] = '\0';
+        }
     }
-    proc_t* p = cur();
-    const char* cwd = (p && p->cwd[0]) ? p->cwd : "/";
-    size_t cl = strlen(cwd);
-    if (cl >= 511) { out[0] = '/'; out[1] = '\0'; return true; }
-    memcpy(out, cwd, cl);
-    if (out[cl - 1] != '/') out[cl++] = '/';
-    strncpy(out + cl, tmp, 511 - cl);
-    out[511] = '\0';
+    if (root[0]) jail_canon_clamp(out, 512, root);
     return true;
 }
 
@@ -823,7 +839,15 @@ static int64_t sys_execve(const char* path, const char** uargv, const char** uen
 
     fpu_init(); /* exec gives the new image a clean, all-masked FPU/SSE state */
 
-    log_info("[exec] pid=%u entry=0x%lx rsp=0x%lx", p->pid, res.entry, rsp);
+    if (g_jail_auto_isolate && !p->jail_exempt) {
+        kjail_conf_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.flags = JAILF_ALL; /* empty root => same fs view, fresh pid/ipc namespace */
+        int jid = jail_create(p->jail_id, &cfg, p->euid);
+        if (jid > 0) jail_enter(p, (uint32_t) jid);
+    }
+
+    log_info("[exec] pid=%u entry=0x%lx rsp=0x%lx jail=%u", p->pid, res.entry, rsp, p->jail_id);
     enter_userspace_exec(res.entry, rsp, 0x202ULL);
 }
 
@@ -844,6 +868,7 @@ __attribute__((noreturn)) void proc_do_exit(int code)
     }
 
     shm_proc_exit(p->pid);
+    jail_unref(p->jail_id);
     proc_release_fdtable(p);
 
     for (int i = 0; i < PROC_MAX; i++) {
@@ -913,6 +938,8 @@ static int64_t sys_wait4(int pid, int* wstatus, int options, void* rusage)
             if (c->state == PROC_UNUSED)
                 continue;
             if (c->ppid != parent->pid)
+                continue;
+            if (!jail_can_see(parent, c))
                 continue;
             if (pid > 0 && (int) c->pid != pid)
                 continue;
@@ -1020,11 +1047,14 @@ static int64_t sys_getcwd(char* buf, uint64_t size)
     if (!uptr_ok_w(buf, size))
         return -(int64_t) EFAULT;
     proc_t* p = cur();
-    const char* cwd = p ? p->cwd : g_cwd;
-    size_t len = strlen(cwd) + 1;
+    char tmp[512];
+    strncpy(tmp, p ? p->cwd : g_cwd, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
+    jail_strip_root(tmp, sizeof(tmp)); /* report jail-relative cwd to the process */
+    size_t len = strlen(tmp) + 1;
     if (len > size)
         return -(int64_t) EINVAL;
-    memcpy(buf, cwd, len);
+    memcpy(buf, tmp, len);
     return (int64_t) (uintptr_t) buf;
 }
 
@@ -1060,6 +1090,12 @@ static bool is_root(void)
 {
     proc_t* p = cur();
     return p && p->euid == 0;
+}
+
+/* host-global privilege: euid 0 AND not confined by a JAILF_PRIV jail */
+static bool host_priv(void)
+{
+    return jail_host_priv(cur());
 }
 
 static int64_t sys_setfsuid(uint32_t uid)
@@ -1189,7 +1225,9 @@ static int64_t sys_getpgid(uint64_t pid)
     if (pid == 0)
         return sys_getpgrp();
     proc_t* p = proc_find((uint32_t) pid);
-    return p ? (int64_t) p->pgid : -(int64_t) ESRCH;
+    if (!p || !jail_can_see(cur(), p))
+        return -(int64_t) ESRCH;
+    return (int64_t) p->pgid;
 }
 static int64_t sys_setsid(void)
 {
@@ -1203,6 +1241,8 @@ static int64_t sys_setpgid(uint64_t pid, uint64_t pgid)
 {
     proc_t* p = pid ? proc_find((uint32_t) pid) : cur();
     if (!p)
+        return -(int64_t) ESRCH;
+    if (!jail_can_see(cur(), p))
         return -(int64_t) ESRCH;
     if (pgid == 0)
         pgid = p->pid;
@@ -1232,6 +1272,8 @@ static int64_t sys_kill(int64_t pid, int sig)
         proc_t* target = proc_find((uint32_t) pid);
         if (!target)
             return -(int64_t) ESRCH;
+        if (!jail_can_see(self, target)) /* hide existence across jails */
+            return -(int64_t) ESRCH;
         if (!kill_permitted(self, target))
             return -(int64_t) EPERM;
         if (sig)
@@ -1245,6 +1287,8 @@ static int64_t sys_kill(int64_t pid, int sig)
                 continue;
             if (g_proctable[i].pid == 1)
                 continue;
+            if (!jail_can_see(self, &g_proctable[i]))
+                continue;
             if (sig)
                 proc_send_signal(&g_proctable[i], sig);
         }
@@ -1256,6 +1300,8 @@ static int64_t sys_kill(int64_t pid, int sig)
         for (int i = 0; i < PROC_MAX; i++)
         {
             if (g_proctable[i].state == PROC_UNUSED)
+                continue;
+            if (!jail_can_see(self, &g_proctable[i]))
                 continue;
             if (g_proctable[i].pgid == (int) pgid)
             {
@@ -1272,6 +1318,8 @@ static int64_t sys_kill(int64_t pid, int sig)
         for (int i = 0; i < PROC_MAX; i++)
         {
             if (g_proctable[i].state == PROC_UNUSED)
+                continue;
+            if (!jail_can_see(self, &g_proctable[i]))
                 continue;
             if (self && g_proctable[i].pgid == self->pgid && sig)
                 proc_send_signal(&g_proctable[i], sig);
@@ -1568,9 +1616,11 @@ static int64_t sys_futex(uint32_t* uaddr, int op, uint32_t val, void* timeout, u
     }
     case FUTEX_WAKE:
     {
+        proc_t* self = cur();
         int woken = 0;
         for (int i = 0; i < FUTEX_MAX_WAITERS && woken < (int) val; i++) {
-            if (g_futex_tab[i].uaddr == uaddr && g_futex_tab[i].proc) {
+            if (g_futex_tab[i].uaddr == uaddr && g_futex_tab[i].proc &&
+                (!self || g_futex_tab[i].proc->jail_id == self->jail_id)) {
                 g_futex_tab[i].proc->wakeup_tick = 0;
                 if (g_futex_tab[i].proc->state == PROC_WAITING)
                     g_futex_tab[i].proc->state = PROC_READY;
@@ -1589,9 +1639,12 @@ static int64_t sys_futex(uint32_t* uaddr, int op, uint32_t val, void* timeout, u
             return -(int64_t) EAGAIN;
         uint32_t nr_wake = val;
         uint32_t nr_requeue = (uint32_t) (uint64_t) timeout; /* val2 rides in the timeout slot */
+        proc_t* self = cur();
         int woken = 0, requeued = 0;
         for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
             if (g_futex_tab[i].uaddr != uaddr || !g_futex_tab[i].proc)
+                continue;
+            if (self && g_futex_tab[i].proc->jail_id != self->jail_id)
                 continue;
             if ((uint32_t) woken < nr_wake) {
                 g_futex_tab[i].proc->wakeup_tick = 0;
@@ -1920,6 +1973,86 @@ static int64_t sys_link(const char* old, const char* lnew)
     if (!path_abs(abs_old, old) || !path_abs(abs_new, lnew))
         return -(int64_t)EFAULT;
     return (int64_t)vfs_link(abs_old, abs_new);
+}
+
+static int64_t sys_jail_create(const kjail_conf_t* ucfg)
+{
+    proc_t* p = cur();
+    if (!p) return -(int64_t) EFAULT;
+    if (!jail_host_priv(p)) return -(int64_t) EPERM; /* jail creation is privileged */
+    if (!ucfg || !uptr_ok(ucfg, sizeof(kjail_conf_t))) return -(int64_t) EFAULT;
+    kjail_conf_t cfg;
+    memcpy(&cfg, ucfg, sizeof(cfg));
+    cfg.name[JAIL_NAME_MAX - 1] = '\0';
+    cfg.root[JAIL_ROOT_MAX - 1] = '\0';
+    int jid = jail_create(p->jail_id, &cfg, p->euid);
+    if (jid < 0) return jid;
+    if (cfg.attach) jail_enter(p, (uint32_t) jid);
+    return jid;
+}
+
+static int64_t sys_jail_attach(uint32_t jid)
+{
+    proc_t* p = cur();
+    if (!p) return -(int64_t) EFAULT;
+    jail_t* j = jail_find(jid);
+    if (!j || j->state != JAIL_ACTIVE) return -(int64_t) ESRCH;
+    if (!jail_is_descendant(p->jail_id, jid)) return -(int64_t) EPERM; /* no escape upward */
+    if (!jail_can_fork(jid)) return -(int64_t) EAGAIN;
+    jail_enter(p, jid);
+    return 0;
+}
+
+static int64_t sys_jail_get(uint32_t jid, kjail_info_t* uout)
+{
+    proc_t* p = cur();
+    if (!uout || !uptr_ok_w(uout, sizeof(kjail_info_t))) return -(int64_t) EFAULT;
+    jail_t* j = jail_find(jid);
+    if (!j) return -(int64_t) ESRCH;
+    if (p && !jail_is_descendant(p->jail_id, jid)) return -(int64_t) EPERM;
+    kjail_info_t info;
+    memset(&info, 0, sizeof(info));
+    info.id = j->id;
+    info.parent_id = j->parent_id;
+    info.flags = j->flags;
+    info.nprocs = j->nprocs;
+    info.max_procs = j->max_procs;
+    info.creator_uid = j->creator_uid;
+    memcpy(info.name, j->name, JAIL_NAME_MAX);
+    memcpy(info.root, j->root, JAIL_ROOT_MAX);
+    memcpy(uout, &info, sizeof(info));
+    return 0;
+}
+
+static int64_t sys_jail_list(uint32_t* uids, int max)
+{
+    proc_t* p = cur();
+    if (max < 0) return -(int64_t) EINVAL;
+    if (max > 0 && (!uids || !uptr_ok_w(uids, (uint64_t) max * sizeof(uint32_t))))
+        return -(int64_t) EFAULT;
+    int n = 0;
+    for (int i = 0; i < JAIL_MAX; i++) {
+        if (g_jails[i].state == JAIL_UNUSED) continue;
+        if (p && !jail_is_descendant(p->jail_id, g_jails[i].id)) continue;
+        if (n < max) uids[n] = g_jails[i].id;
+        n++;
+    }
+    return n;
+}
+
+static int64_t sys_jail_remove(uint32_t jid) { return jail_remove(jid, cur()); }
+
+static int64_t sys_jail_self(void)
+{
+    proc_t* p = cur();
+    return p ? (int64_t) p->jail_id : 0;
+}
+
+static int64_t sys_jail_set_auto(int on)
+{
+    if (!host_priv()) return -(int64_t) EPERM;
+    g_jail_auto_isolate = on ? 1 : 0;
+    return 0;
 }
 
 void syscall_dispatch(syscall_frame_t* f)
@@ -2363,7 +2496,7 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = 0;
         break; /* sched_rr_get_interval */
     case 149: case 150: case 151: case 152: ret = -(int64_t)ENOSYS; break; /* mlock/munlock */
-    case 153: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* vhangup */
+    case 153: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* vhangup */
     case 137:
         ret = sys_statfs((const char*)a1, (void*)a2);
         break;
@@ -2376,7 +2509,7 @@ void syscall_dispatch(syscall_frame_t* f)
     case 158:
         ret = sys_arch_prctl((int)a1, a2);
         break;
-    case 159: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* adjtimex */
+    case 159: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* adjtimex */
     case 160:
         ret = sys_getrlimit(a1, (void*)a2); /* setrlimit: accept silently */
         break;
@@ -2385,24 +2518,24 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = 0; /* sync: no-op (ramfs) */
         break;
     case 169:
-        if (!is_root()) { ret = -(int64_t)EPERM; break; }
+        if (!host_priv()) { ret = -(int64_t)EPERM; break; }
         cpu_halt();
         ret = 0;
         break;
-    case 164: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* settimeofday */
+    case 164: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* settimeofday */
     case 170:
-        ret = is_root() ? 0 : -(int64_t)EPERM; /* sethostname */
+        ret = host_priv() ? 0 : -(int64_t)EPERM; /* sethostname */
         break;
-    case 171: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* setdomainname */
+    case 171: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* setdomainname */
     case 172: { /* iopl(level) - set io privilege level in RFLAGS */
-        if (!is_root()) { ret = -(int64_t)EPERM; break; }
+        if (!host_priv()) { ret = -(int64_t)EPERM; break; }
         int level = (int)a1 & 3;
         f->r11 = (f->r11 & ~0x3000ULL) | ((uint64_t)level << 12);
         ret = 0;
         break;
     }
     case 173: { /* ioperm(from, count, turn_on) - we just grant iopl=3 for simplicity hahaha */
-        if (!is_root()) { ret = -(int64_t)EPERM; break; }
+        if (!host_priv()) { ret = -(int64_t)EPERM; break; }
         (void)a1; (void)a2;
         if (a3) f->r11 |= 0x3000ULL; /* IOPL=3: allow all ports */
         ret = 0;
@@ -2441,7 +2574,7 @@ void syscall_dispatch(syscall_frame_t* f)
     case 222: case 224: case 226: ret = 0; break; /* timer_create/gettime/delete stubs */
     case 223: ret = 0; break; /* timer_settime */
     case 225: ret = 0; break; /* timer_getoverrun */
-    case 227: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* clock_settime */
+    case 227: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* clock_settime */
     case 232: ret = sys_epoll_wait((int)a1, (struct epoll_event*)a2, (int)a3, (int)a4); break;
     case 233: ret = sys_epoll_ctl((int)a1, (int)a2, (int)a3, (struct epoll_event*)a4); break;
     case 200:
@@ -2558,7 +2691,7 @@ void syscall_dispatch(syscall_frame_t* f)
     case 294: ret = -(int64_t)ENOSYS; break;                                          /* inotify_init1 */
     case 295: ret = sys_preadv((int)a1, (const struct iovec*)a2, (int)a3, a4); break;  /* preadv */
     case 296: ret = sys_pwritev((int)a1, (const struct iovec*)a2, (int)a3, a4); break; /* pwritev */
-    case 300: ret = is_root() ? 0 : -(int64_t)EPERM; break; /* clock_adjtime */
+    case 300: ret = host_priv() ? 0 : -(int64_t)EPERM; break; /* clock_adjtime */
     case 301: ret = 0; break; /* syncfs: no-op */
     case 302:
         ret = sys_prlimit64(a1, a2, (void*) a3, (void*) a4);
@@ -2578,7 +2711,7 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = sys_getrandom((void*) a1, a2, (uint32_t) a3);
         break;
     case 319: ret = sys_memfd_create((const char*)a1, (uint32_t)a2); break;
-    case 324: ret = 0; break; /* membarrier: no-op on single-CPU */
+    case 324: ret = 0; break;
     case 325: ret = -(int64_t)ENOSYS; break; /* mlock2 */
     case 326: ret = sys_copy_file_range((int)a1,(uint64_t*)a2,(int)a3,(uint64_t*)a4,a5,(uint32_t)a6); break;
     case 327: ret = sys_preadv((int)a1,(const struct iovec*)a2,(int)a3,a4); break; /* preadv2 */
@@ -2586,6 +2719,14 @@ void syscall_dispatch(syscall_frame_t* f)
     case 332: ret = sys_statx((int)a1,(const char*)a2,(int)a3,(uint32_t)a4,(struct statx*)a5); break;
     case 334: { for (int _fd=(int)a1; _fd<=(int)a2 && _fd<VFS_FD_MAX; _fd++) if (fd_valid(_fd)) fd_close(_fd); ret=0; break; } /* close_range */
     case 439: { char abs[512]; at_resolve((int)a1,(const char*)a2,abs,sizeof(abs)); ret=(int64_t)vfs_access(abs,(int)a3); break; } /* faccessat2 */
+
+    case SYS_jail_create:   ret = sys_jail_create((const kjail_conf_t*) a1); break;
+    case SYS_jail_attach:   ret = sys_jail_attach((uint32_t) a1); break;
+    case SYS_jail_get:      ret = sys_jail_get((uint32_t) a1, (kjail_info_t*) a2); break;
+    case SYS_jail_list:     ret = sys_jail_list((uint32_t*) a1, (int) a2); break;
+    case SYS_jail_remove:   ret = sys_jail_remove((uint32_t) a1); break;
+    case SYS_jail_self:     ret = sys_jail_self(); break;
+    case SYS_jail_set_auto: ret = sys_jail_set_auto((int) a1); break;
 
     default:
         log_debug("[syscall %lu  a1=%lx a2=%lx a3=%lx]", nr, a1, a2, a3);

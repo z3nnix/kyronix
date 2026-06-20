@@ -1,5 +1,6 @@
 #include "shm.h"
 #include "../lib/string.h"
+#include "../proc/jail.h"
 #include "../proc/proc.h"
 #include "pmm.h"
 #include "vmm.h"
@@ -9,6 +10,7 @@
 #define EEXIST 17
 #define ENOMEM 12
 #define EPERM 1
+#define EACCES 13
 
 #define IPC_PRIVATE 0
 #define IPC_CREAT 01000
@@ -31,6 +33,8 @@ typedef struct {
     int ref_count;
     int destroy_pending;
     uint32_t mode;
+    uint32_t cuid; /* creator euid: owner for permission checks */
+    uint32_t jail_id;
 } shm_seg_t;
 
 typedef struct {
@@ -44,6 +48,33 @@ static shm_seg_t g_segs[SHM_MAX_SEGS];
 static shm_attach_t g_attaches[SHM_MAX_ATTACH];
 static int g_next_shmid = 1;
 
+static uint32_t cur_jail(void) { return g_current_proc ? g_current_proc->jail_id : JAIL_HOST; }
+
+static bool ipc_isolated(void) {
+    jail_t *j = jail_find(cur_jail());
+    return j && (j->flags & JAILF_IPC);
+}
+
+static bool seg_visible(const shm_seg_t *s) {
+    if (!ipc_isolated()) return true; /* host / not ipc-confined sees all */
+    return s->jail_id == cur_jail();
+}
+
+static uint32_t cur_euid(void) { return g_current_proc ? g_current_proc->euid : 0; }
+
+static bool seg_owner(const shm_seg_t *s) {
+    uint32_t euid = cur_euid();
+    return euid == 0 || euid == s->cuid; /* root or creator */
+}
+
+/* SysV permission check: owner/root bypass mode bits; others need r (and w unless ro) */
+static bool seg_access_ok(const shm_seg_t *s, bool want_write) {
+    if (seg_owner(s)) return true;
+    if (!(s->mode & 0004)) return false;
+    if (want_write && !(s->mode & 0002)) return false;
+    return true;
+}
+
 static shm_seg_t *seg_by_id(int id) {
     for (int i = 0; i < SHM_MAX_SEGS; i++)
         if (g_segs[i].shmid == id) return &g_segs[i];
@@ -52,7 +83,8 @@ static shm_seg_t *seg_by_id(int id) {
 
 static shm_seg_t *seg_by_key(int key) {
     for (int i = 0; i < SHM_MAX_SEGS; i++)
-        if (g_segs[i].shmid && g_segs[i].key == key) return &g_segs[i];
+        if (g_segs[i].shmid && g_segs[i].key == key && seg_visible(&g_segs[i]))
+            return &g_segs[i];
     return NULL;
 }
 
@@ -96,12 +128,15 @@ int sys_shmget(int key, uint64_t size, int flags) {
     slot->key = key;
     slot->size = size;
     slot->mode = (uint32_t) (flags & 0777);
+    slot->cuid = cur_euid();
+    slot->jail_id = cur_jail();
     return slot->shmid;
 }
 
 uint64_t sys_shmat(int shmid, uint64_t shmaddr, int shmflg) {
     shm_seg_t *s = seg_by_id(shmid);
-    if (!s) return (uint64_t) (-(int64_t) EINVAL);
+    if (!s || !seg_visible(s)) return (uint64_t) (-(int64_t) EINVAL);
+    if (!seg_access_ok(s, !(shmflg & SHM_RDONLY))) return (uint64_t) (-(int64_t) EACCES);
 
     proc_t *p = g_current_proc;
     if (!p || !p->space) return (uint64_t) (-(int64_t) EINVAL);
@@ -167,10 +202,11 @@ int sys_shmdt(uint64_t addr) {
 /* 0 + fill key fields */
 int sys_shmctl(int shmid, int cmd, void *buf) {
     shm_seg_t *s = seg_by_id(shmid);
-    if (!s) return -EINVAL;
+    if (!s || !seg_visible(s)) return -EINVAL;
 
     switch (cmd) {
     case IPC_RMID:
+        if (!seg_owner(s)) return -EPERM; /* only creator or root may remove */
         if (s->ref_count > 0)
             s->destroy_pending = 1;
         else
@@ -178,6 +214,7 @@ int sys_shmctl(int shmid, int cmd, void *buf) {
         return 0;
     case IPC_STAT:
         if (!buf) return -EINVAL;
+        if (!seg_access_ok(s, false)) return -EACCES;
         memset(buf, 0, 144);                              /* zero out shmid_ds */
         ((uint64_t *) buf)[6] = s->size;                  /* shm_segsz at offset 48 */
         ((uint64_t *) buf)[11] = (uint64_t) s->ref_count; /* shm_nattch at offset 88 */
@@ -193,9 +230,10 @@ void shm_proc_exit(uint32_t pid) {
         if (!g_attaches[i].shmid) continue;
         if (g_attaches[i].pid != pid) continue;
         shm_seg_t *s = seg_by_id(g_attaches[i].shmid);
-        if (s && p && p->space) {
-            for (int j = 0; j < g_attaches[i].n_pages; j++)
-                vmm_unmap(p->space, g_attaches[i].va + (uint64_t) j * PAGE_SIZE);
+        if (s) {
+            if (p && p->space)
+                for (int j = 0; j < g_attaches[i].n_pages; j++)
+                    vmm_unmap(p->space, g_attaches[i].va + (uint64_t) j * PAGE_SIZE);
             s->ref_count--;
             if (s->ref_count <= 0 && s->destroy_pending) seg_destroy(s);
         }

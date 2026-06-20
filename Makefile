@@ -64,6 +64,7 @@ SRCS := \
     kernel/exec/elf.c                  \
     kernel/exec/process.c              \
     kernel/proc/proc.c                 \
+    kernel/proc/jail.c                 \
     kernel/proc/signal.c               \
     kernel/fs/ext2.c                   \
     kernel/fs/vfs.c                    \

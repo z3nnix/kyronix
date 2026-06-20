@@ -69,7 +69,7 @@ int64_t sys_epoll_create1(int flags) {
             g_epolls[i].nw = 0;
         }
     }
-    int epfd = fd_open("/dev/null", O_RDONLY, 0);
+    int epfd = fd_open_host("/dev/null", O_RDONLY, 0); /* internal handle: not subject to jail root */
     if (epfd < 0) return -(int64_t) EMFILE;
     epoll_t *ep = NULL;
     for (int i = 0; i < EPOLL_SLOTS; i++)

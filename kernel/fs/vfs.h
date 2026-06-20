@@ -148,6 +148,7 @@ void vfs_free_fdtable(vfs_file_t **fds);
 
 const char *vfs_copy_user_path(const char *path, char *kbuf);
 int fd_open(const char *path, int flags, int mode);
+int fd_open_host(const char *path, int flags, int mode); /* kernel-internal: no jail re-root */
 int fd_openat(int dirfd, const char *path, int flags, int mode);
 int fd_close(int fd);
 int64_t fd_read(int fd, void *buf, uint64_t len);

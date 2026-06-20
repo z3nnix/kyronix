@@ -46,12 +46,45 @@ static int64_t dev_zero_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t of
     return (int64_t) len;
 }
 
+static int dev_rdrand_ok(void) {
+    static int ok = -1;
+    if (ok < 0) {
+        uint32_t ecx;
+        __asm__ volatile("cpuid" : "=c"(ecx) : "a"(1) : "ebx", "edx", "memory");
+        ok = (int) ((ecx >> 30) & 1);
+    }
+    return ok;
+}
+
 static int64_t dev_urandom_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
     (void) off;
-    static uint64_t s = 0xdeadbeef13579aceULL;
     uint8_t *p = (uint8_t *) buf;
-    for (uint64_t i = 0; i < len; i++) {
+    uint64_t i = 0;
+
+    if (dev_rdrand_ok()) {
+        while (i + 8 <= len) {
+            uint64_t v;
+            __asm__ volatile("1: rdrand %0; jnc 1b" : "=r"(v) :: "cc");
+            __builtin_memcpy(p + i, &v, 8);
+            i += 8;
+        }
+        if (i < len) {
+            uint64_t v;
+            __asm__ volatile("1: rdrand %0; jnc 1b" : "=r"(v) :: "cc");
+            __builtin_memcpy(p + i, &v, len - i);
+        }
+        return (int64_t) len;
+    }
+
+    /* no RDRAND: xorshift seeded from the TSC (boot-unique), re-stirred every call */
+    static uint64_t s;
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    uint64_t tsc = (uint64_t) hi << 32 | lo;
+    if (!s) s = tsc ^ 0x9e3779b97f4a7c15ULL;
+    s ^= tsc;
+    for (; i < len; i++) {
         s ^= s << 13;
         s ^= s >> 7;
         s ^= s << 17;

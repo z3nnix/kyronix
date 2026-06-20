@@ -4,6 +4,7 @@
 #include "inet_socket.h"
 #include "lib/string.h"
 #include "mm/heap.h"
+#include "proc/jail.h"
 #include "proc/proc.h"
 
 #define EACCES 13
@@ -43,7 +44,15 @@ typedef struct {
 static struct {
     char name[107];
     vfs_node_t *node;
+    uint32_t jail_id;
 } g_abstract_socks[MAX_ABSTRACT_SOCKS];
+
+static uint32_t cur_jail(void) { return g_current_proc ? g_current_proc->jail_id : JAIL_HOST; }
+
+static bool ipc_isolated(void) {
+    jail_t *j = jail_find(cur_jail());
+    return j && (j->flags & JAILF_IPC);
+}
 
 int fd_socket(int domain, int type, int proto) {
     (void) proto;
@@ -90,6 +99,7 @@ int fd_bind_unix(int fd, const char *path) {
                 strncpy(g_abstract_socks[i].name, path + 1, 106);
                 g_abstract_socks[i].name[106] = '\0';
                 g_abstract_socks[i].node = f->node;
+                g_abstract_socks[i].jail_id = cur_jail();
                 s->path[0] = '\0';
                 strncpy(s->path + 1, path + 1, 106);
                 s->state = SOCK_BOUND;
@@ -204,6 +214,8 @@ int fd_connect_unix(int fd, const char *path) {
         sn = NULL;
         for (int i = 0; i < MAX_ABSTRACT_SOCKS; i++) {
             if (g_abstract_socks[i].node && strncmp(g_abstract_socks[i].name, path + 1, 106) == 0) {
+                if (ipc_isolated() && g_abstract_socks[i].jail_id != cur_jail())
+                    continue; /* abstract name in another jail is invisible */
                 sn = g_abstract_socks[i].node;
                 break;
             }

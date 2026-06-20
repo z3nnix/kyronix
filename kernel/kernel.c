@@ -33,6 +33,7 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "net/net.h"
+#include "proc/jail.h"
 #include "proc/proc.h"
 
 #define STATUS_COL 72
@@ -167,6 +168,8 @@ void kmain(void) {
     kstatus("Initialising syscalls", true);
     proc_init();
     kstatus("Initialising scheduler", true);
+    jail_init();
+    kstatus("Initialising jails", true);
     vfs_init();
     {
         vfs_node_t *_n = vfs_lookup("/proc");
@@ -188,9 +191,9 @@ void kmain(void) {
     ahci_init();
     kstatus("Initialising AHCI", ahci_ready());
     virtnet_init();
-    kstatus("virtio-net", virtnet_ready());
+    kstatus("Initialising virtio-net", virtnet_ready());
     net_init();
-    kstatus("lwIP network stack", true);
+    kstatus("Initialising network stack", true);
     uio_init();
     kstatus("Initialising UIO", true);
     fbdev_init();

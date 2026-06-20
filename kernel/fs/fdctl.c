@@ -129,7 +129,7 @@ int fd_fcntl(int fd, int cmd, uint64_t arg) {
         return f->flags;
     case F_SETFL: {
         /* F_SETFL may only change status flags; access mode (O_ACCMODE) and
-           creation flags stay fixed, else a RO fd could be promoted to RW. */
+                                creation flags stay fixed, else a RO fd could be promoted to RW. */
         int changeable = O_APPEND | O_NONBLOCK;
         f->flags = (f->flags & ~changeable) | ((int) arg & changeable);
         return 0;

@@ -4,6 +4,7 @@
 #include "lib/string.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "proc/jail.h"
 #include "proc/proc.h"
 #include "syscall/syscall.h"
 
@@ -48,21 +49,23 @@ static char proc_state_char(proc_t *p) {
 static int proc_count(int state) {
     int n = 0;
     for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state == state) n++;
+        if (g_proctable[i].state == state && jail_can_see(g_current_proc, &g_proctable[i])) n++;
     return n;
 }
 
 static int proc_alive_count(void) {
     int n = 0;
     for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state != PROC_UNUSED) n++;
+        if (g_proctable[i].state != PROC_UNUSED && jail_can_see(g_current_proc, &g_proctable[i]))
+            n++;
     return n;
 }
 
 static int proc_last_pid(void) {
     int last = 0;
     for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state != PROC_UNUSED && (int) g_proctable[i].pid > last)
+        if (g_proctable[i].state != PROC_UNUSED && jail_can_see(g_current_proc, &g_proctable[i]) &&
+            (int) g_proctable[i].pid > last)
             last = (int) g_proctable[i].pid;
     return last;
 }

@@ -28,6 +28,29 @@ int test_getrandom(void) {
 }
 REGISTER_TEST(getrandom, "Phase 8: Random / Misc");
 
+int test_dev_urandom(void) {
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd < 0) return 1; /* device optional */
+
+    unsigned char a[64], b[64];
+    ssize_t na = read(fd, a, sizeof(a));
+    ssize_t nb = read(fd, b, sizeof(b));
+    close(fd);
+    ASSERT_EQ((ssize_t) sizeof(a), na);
+    ASSERT_EQ((ssize_t) sizeof(b), nb);
+
+    int all_zero = 1, all_same = 1;
+    for (size_t i = 0; i < sizeof(a); i++) {
+        if (a[i] != 0) all_zero = 0;
+        if (a[i] != a[0]) all_same = 0;
+    }
+    ASSERT_FALSE(all_zero);             /* not a constant stream */
+    ASSERT_FALSE(all_same);
+    ASSERT_NE(0, memcmp(a, b, sizeof(a))); /* successive reads differ */
+    return 1;
+}
+REGISTER_TEST(dev_urandom, "Phase 8: Random / Misc");
+
 int test_set_tid_address(void) {
     int tid = 0;
     int *clear_child_tid = &tid;
