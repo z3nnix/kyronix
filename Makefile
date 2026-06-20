@@ -77,6 +77,7 @@ SRCS := \
     kernel/fs/inet_socket.c            \
     kernel/fs/pipe.c                   \
     kernel/fs/cpio.c                   \
+    kernel/fs/fat32.c                  \
     kernel/drivers/ahci.c             \
     kernel/drivers/serial.c           \
     kernel/drivers/kbd.c              \
