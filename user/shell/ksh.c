@@ -16,12 +16,16 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MAX_ARGS 32
 #define MAX_LINE 512
 #define MAX_HISTORY 64
 #define MAX_JOBS 16
+
+static void expand_env(char *buf, size_t size);
+static int split_line(char *line, char **argv);
 
 #define SEG_FIRST 0
 #define SEG_AND 1
@@ -43,6 +47,107 @@ typedef struct {
 
 static job_t g_jobs[MAX_JOBS];
 static int g_job_seq = 0;
+
+static void expand_env(char *buf, size_t size) {
+    char tmp[MAX_LINE];
+    size_t pos = 0;
+    int quote = 0;
+    for (char *p = buf; *p && pos < size - 1; p++) {
+        if (*p == '\\' && p[1]) {
+            tmp[pos++] = *p++; if (pos < size - 1) tmp[pos++] = *p;
+            continue;
+        }
+        if ((*p == '\'' || *p == '"') && (quote == 0 || quote == *p)) {
+            quote = quote ? 0 : *p; tmp[pos++] = *p; continue;
+        }
+        if (*p == '$' && quote != '\'') {
+            p++;
+            char name[64]; int ni = 0, brace = 0;
+            if (*p == '{') { brace = 1; p++; }
+            while (*p && ni < 63 && (isalnum(*p) || *p == '_')) { name[ni++] = *p++; } name[ni] = '\0';
+            if (brace && *p == '}') p++;
+            if (ni) {
+                const char *val = getenv(name);
+                if (val) {
+                    size_t vlen = strlen(val);
+                    size_t rem = size - pos - 1;
+                    memcpy(tmp + pos, val, vlen < rem ? vlen : rem);
+                    pos += vlen < rem ? vlen : rem;
+                }
+            } else { tmp[pos++] = '$'; }
+            p--; continue;
+        }
+        tmp[pos++] = *p;
+    }
+    tmp[pos] = '\0';
+    strncpy(buf, tmp, size - 1);
+    buf[size - 1] = '\0';
+}
+
+#define MAX_ALIASES 64
+typedef struct {
+    char name[64];
+    char value[MAX_LINE];
+} alias_t;
+static alias_t g_aliases[MAX_ALIASES];
+static int g_naliases = 0;
+
+static alias_t *alias_find(const char *name) {
+    for (int i = 0; i < g_naliases; i++)
+        if (strcmp(g_aliases[i].name, name) == 0) return &g_aliases[i];
+    return NULL;
+}
+
+static void alias_add(const char *name, const char *value) {
+    alias_t *a = alias_find(name);
+    if (a) {
+        strncpy(a->value, value, sizeof(a->value) - 1);
+        a->value[sizeof(a->value) - 1] = '\0';
+        return;
+    }
+    if (g_naliases >= MAX_ALIASES) return;
+    strncpy(g_aliases[g_naliases].name, name, sizeof(g_aliases[g_naliases].name) - 1);
+    g_aliases[g_naliases].name[sizeof(g_aliases[g_naliases].name) - 1] = '\0';
+    strncpy(g_aliases[g_naliases].value, value, sizeof(g_aliases[g_naliases].value) - 1);
+    g_aliases[g_naliases].value[sizeof(g_aliases[g_naliases].value) - 1] = '\0';
+    g_naliases++;
+}
+
+static int alias_remove(const char *name) {
+    for (int i = 0; i < g_naliases; i++) {
+        if (strcmp(g_aliases[i].name, name) == 0) {
+            memmove(&g_aliases[i], &g_aliases[i + 1], (size_t)(g_naliases - i - 1) * sizeof(alias_t));
+            g_naliases--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void alias_expand_first(int *argc, char **argv, char *buf, size_t bufsz) {
+    if (*argc == 0) return;
+    alias_t *a = alias_find(argv[0]);
+    if (!a) return;
+    char rebuild[MAX_LINE];
+    size_t pos = 0;
+    size_t vlen = strlen(a->value);
+    if (pos + vlen >= sizeof(rebuild)) return;
+    memcpy(rebuild + pos, a->value, vlen);
+    pos += vlen;
+    for (int i = 1; i < *argc; i++) {
+        if (pos + 1 >= sizeof(rebuild)) break;
+        rebuild[pos++] = ' ';
+        size_t alen = strlen(argv[i]);
+        if (pos + alen >= sizeof(rebuild)) break;
+        memcpy(rebuild + pos, argv[i], alen);
+        pos += alen;
+    }
+    rebuild[pos] = '\0';
+    strncpy(buf, rebuild, bufsz);
+    buf[bufsz - 1] = '\0';
+    expand_env(buf, bufsz);
+    *argc = split_line(buf, argv);
+}
 
 static job_t *job_add(pid_t pgid, pid_t *pids, int n, const char *cmd) {
     for (int i = 0; i < MAX_JOBS; i++) {
@@ -110,30 +215,76 @@ static int cached_uid = -1;
 static char shell_pwd[MAX_LINE];
 
 static void build_prompt(char *buf, size_t size) {
+    const char *ps1 = getenv("PS1");
+    if (!ps1 || !*ps1) ps1 = "\\w \\$ ";
     static char cwd[MAX_LINE];
-    const char *cwd_str = getcwd(cwd, sizeof(cwd));
-    if (cwd_str == NULL) {
-        cwd_str = shell_pwd;
-        if (cwd_str[0] == '\0') { cwd_str = "?"; }
-    }
-
-    const char *display_path = cwd_str;
-    static char tilde_path[MAX_LINE];
     const char *home = getenv("HOME");
-    if (home != NULL) {
-        size_t home_len = strlen(home);
-        if (strncmp(cwd_str, home, home_len) == 0) {
-            if (cwd_str[home_len] == '\0') {
-                display_path = "~";
-            } else if (cwd_str[home_len] == '/') {
-                snprintf(tilde_path, sizeof(tilde_path), "~%s", cwd_str + home_len);
-                display_path = tilde_path;
+    size_t home_len = home ? strlen(home) : 0;
+    char hostname_buf[64] = "";
+    char username_buf[64] = "";
+    struct passwd *pw = getpwuid(getuid());
+    if (pw) {
+        strncpy(username_buf, pw->pw_name, sizeof(username_buf) - 1);
+        username_buf[sizeof(username_buf) - 1] = '\0';
+    }
+    gethostname(hostname_buf, sizeof(hostname_buf));
+
+    size_t pos = 0;
+    for (const char *p = ps1; *p && pos < size - 1; p++) {
+        if (*p != '\\') { buf[pos++] = *p; continue; }
+        p++;
+        char ch = *p;
+        if (ch == '\\') { buf[pos++] = '\\'; }
+        else if (ch == 'n') { buf[pos++] = '\n'; }
+        else if (ch == '$') { buf[pos++] = (cached_uid == 0) ? '#' : '$'; }
+        else if (ch == 'u') {
+            size_t ulen = strlen(username_buf);
+            size_t rem = size - pos - 1;
+            size_t cp = ulen < rem ? ulen : rem;
+            memcpy(buf + pos, username_buf, cp);
+            pos += cp;
+        } else if (ch == 'h') {
+            char *dot = strchr(hostname_buf, '.');
+            size_t hlen = dot ? (size_t)(dot - hostname_buf) : strlen(hostname_buf);
+            size_t rem = size - pos - 1;
+            size_t cp = hlen < rem ? hlen : rem;
+            memcpy(buf + pos, hostname_buf, cp);
+            pos += cp;
+        } else if (ch == 'w') {
+            const char *cwd_str = getcwd(cwd, sizeof(cwd));
+            if (!cwd_str) cwd_str = shell_pwd;
+            if (!cwd_str[0]) cwd_str = "?";
+            const char *display = cwd_str;
+            static char tilde_path[MAX_LINE];
+            if (home_len && strncmp(cwd_str, home, home_len) == 0) {
+                if (cwd_str[home_len] == '\0')
+                    display = "~";
+                else if (cwd_str[home_len] == '/') {
+                    snprintf(tilde_path, sizeof(tilde_path), "~%s", cwd_str + home_len);
+                    display = tilde_path;
+                }
             }
+            size_t dlen = strlen(display);
+            size_t rem = size - pos - 1;
+            size_t cp = dlen < rem ? dlen : rem;
+            memcpy(buf + pos, display, cp);
+            pos += cp;
+        } else if (ch == 't') {
+            time_t now = time(NULL);
+            struct tm *tm = localtime(&now);
+            if (tm) {
+                char tbuf[16];
+                size_t tlen = strftime(tbuf, sizeof(tbuf), "%H:%M:%S", tm);
+                size_t rem = size - pos - 1;
+                size_t cp = tlen < rem ? tlen : rem;
+                memcpy(buf + pos, tbuf, cp);
+                pos += cp;
+            }
+        } else {
+            if (pos < size - 2) { buf[pos++] = '\\'; buf[pos++] = ch; }
         }
     }
-
-    const char *prompt_char = (cached_uid == 0) ? "#" : "$";
-    snprintf(buf, size, "\033[34m%s\033[0m %s ", display_path, prompt_char);
+    buf[pos] = '\0';
 }
 
 static struct termios saved_termios;
@@ -814,9 +965,17 @@ static int resolve_path(const char *target, char *result, size_t result_size) {
 
 static void print_help(void) {
     puts("Built-in commands:");
-    puts("  cd [dir]  - Change directory (default: HOME)");
-    puts("  exit      - Exit the shell");
-    puts("  help      - Display this help message");
+    puts("  alias [name[=value]...]  - Define/list aliases");
+    puts("  bg [job]                 - Resume job in background");
+    puts("  cd [dir]                 - Change directory (default: HOME)");
+    puts("  exec [cmd [args...]]     - Replace shell with external command");
+    puts("  exit [n]                 - Exit the shell (with status n)");
+    puts("  export [name[=value]...] - Set/export environment variables");
+    puts("  fg [job]                 - Resume job in foreground");
+    puts("  help                     - Display this help message");
+    puts("  jobs                     - List background/stopped jobs");
+    puts("  unalias [-a | name...]   - Remove alias(es)");
+    puts("");
     puts("External commands are also supported via $PATH.");
 }
 
@@ -944,6 +1103,50 @@ static int run_command(int argc, char **argv) {
     if (strcmp(argv[0], "help") == 0) {
         print_help();
         return 0;
+    }
+
+    if (strcmp(argv[0], "alias") == 0) {
+        int ret = 0;
+        if (argc == 1) {
+            for (int i = 0; i < g_naliases; i++)
+                printf("alias %s='%s'\n", g_aliases[i].name, g_aliases[i].value);
+        } else {
+            for (int i = 1; i < argc; i++) {
+                char *eq = strchr(argv[i], '=');
+                if (eq) {
+                    *eq = '\0';
+                    alias_add(argv[i], eq + 1);
+                    *eq = '=';
+                } else {
+                    alias_t *a = alias_find(argv[i]);
+                    if (a)
+                        printf("alias %s='%s'\n", a->name, a->value);
+                    else {
+                        fprintf(stderr, "%s: %s not found\n", argv[0], argv[i]);
+                        ret = 1;
+                    }
+                }
+            }
+        }
+        return ret;
+    }
+
+    if (strcmp(argv[0], "unalias") == 0) {
+        int ret = 0;
+        if (argc > 1 && strcmp(argv[1], "-a") == 0) {
+            g_naliases = 0;
+        } else if (argc > 1) {
+            for (int i = 1; i < argc; i++) {
+                if (!alias_remove(argv[i])) {
+                    fprintf(stderr, "%s: %s not found\n", argv[0], argv[i]);
+                    ret = 1;
+                }
+            }
+        } else {
+            fprintf(stderr, "usage: %s [-a | name ...]\n", argv[0]);
+            ret = 1;
+        }
+        return ret;
     }
 
     if (strcmp(argv[0], "export") == 0) {
@@ -1159,8 +1362,12 @@ static int run_line_logic(char *input) {
         strncpy(copy, segs[i].seg, MAX_LINE - 1);
         copy[MAX_LINE - 1] = '\0';
         char *cmd_argv[MAX_ARGS];
+        expand_env(copy, sizeof(copy));
         int argc = split_line(copy, cmd_argv);
-        if (argc > 0) expand_globs(&argc, cmd_argv);
+        if (argc > 0) {
+            alias_expand_first(&argc, cmd_argv, copy, sizeof(copy));
+            expand_globs(&argc, cmd_argv);
+        }
         status = run_command(argc, cmd_argv);
     }
     return status;
@@ -1295,6 +1502,9 @@ int main(int argc, char **argv) {
     const char *path_env = getenv("PATH");
     if (!path_env || !*path_env || !strstr(path_env, "/usr/bin"))
         setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
+
+    if (!getenv("PS1"))
+        setenv("PS1", "\\w \\$ ", 0);
 
     if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL) {
         const char *env = getenv("PWD");
