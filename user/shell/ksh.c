@@ -19,6 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#define KSH_VERSION "1.0"
 #define MAX_ARGS 32
 #define MAX_LINE 512
 #define MAX_HISTORY 64
@@ -1516,7 +1517,14 @@ int main(int argc, char **argv) {
         }
     }
 
+    setenv("KSH_VERSION", "@(#)PD KSH v" KSH_VERSION, 0);
+
     if (argc > 2 && strcmp(argv[1], "-c") == 0) return run_command_string(argv[2]);
+
+    if (argc > 1 && strcmp(argv[1], "--version") == 0) {
+        fprintf(stderr, "ksh (AT&T Research) %s\n", KSH_VERSION);
+        return 0;
+    }
 
     /* skip flags like -i/-l/-s that xterm passes for interactive/login shells;
        only treat a non-flag argument as a script path */
