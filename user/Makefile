@@ -9,7 +9,6 @@ all:
 	$(MAKE) -C vi
 	$(MAKE) -C kyrobox
 	$(MAKE) -C fetch
-	rm -rf $(ROOTFS)/bin
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	cp ../build/bin/ksh $(ROOTFS)/bin/

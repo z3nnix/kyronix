@@ -1,0 +1,23 @@
+! Solarized Dark palette for xterm
+XTerm*background: #002b36
+XTerm*foreground: #839496
+XTerm*cursorColor: #93a1a1
+
+XTerm*color0: #073642
+XTerm*color1: #dc322f
+XTerm*color2: #859900
+XTerm*color3: #b58900
+XTerm*color4: #268bd2
+XTerm*color5: #d33682
+XTerm*color6: #2aa198
+XTerm*color7: #eee8d5
+XTerm*color8: #586e75
+XTerm*color9: #cb4b16
+XTerm*color10: #859900
+XTerm*color11: #b58900
+XTerm*color12: #268bd2
+XTerm*color13: #6c71c4
+XTerm*color14: #2aa198
+XTerm*color15: #fdf6e3
+
+XTerm*highlightSelection: true

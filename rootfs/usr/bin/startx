@@ -24,7 +24,7 @@ cd /etc/X11
 /usr/libexec/Xorg :0 -config xorg.conf -nolisten tcp -noreset -quiet vt1 &
 sleep 4
 
-xsetroot -solid '#2a4d4d'
+xsetroot -solid '#002b36'
 jwm &
 sleep 1
 xterm -T login +u8 -fn 6x13B -geometry 80x24+5+5 -e /bin/login &

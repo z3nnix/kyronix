@@ -9,7 +9,7 @@
 OS that boots into a Unix-like userspace. Runs musl-linked programs
 out of the box (e.g tcc, nasm, vi, even a dillo web browser).
 
-<img src="meta/screenshots/preview.png" alt="Kyronix preview" width="640">
+<img src="meta/screenshots/preview.jpg" alt="Kyronix preview" width="640">
 
 ## Features
 
