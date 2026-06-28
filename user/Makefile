@@ -15,6 +15,7 @@ all:
 	cp ../build/bin/login $(ROOTFS)/bin/
 	cp ../build/bin/vi $(ROOTFS)/bin/
 	cp ../build/bin/fetch $(ROOTFS)/bin/
+	cp ../build/bin/make $(ROOTFS)/bin/
 	ln -sf ksh $(ROOTFS)/bin/sh
 	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
 	    find grep head hostname kill killall link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \

@@ -11,11 +11,25 @@ CFLAGS += $(FNO_LINK_LIBATOMIC)
 
 .PHONY: all clean
 
-all: $(UTILS:%=$(OUT)/%)
+all: $(UTILS:%=$(OUT)/%) $(OUT)/make
 
 $(OUT)/%: %.c common.h
 	mkdir -p ../../build/bin
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
+$(OUT)/make: make/make
+	mkdir -p $(OUT)
+	cp $< $@
+
+make/make: make/Makefile
+	$(MAKE) -C make
+
+make/Makefile: make/configure
+	cd make && ./configure CC="$(CC)" \
+	    CFLAGS="-O2 -march=x86-64 -mtune=generic -fno-pie $(FNO_LINK_LIBATOMIC)" \
+	    LDFLAGS="$(LDFLAGS)" \
+	    --prefix=/usr --disable-nls
+
 clean:
 	rm -f $(UTILS:%=$(OUT)/%)
+	$(MAKE) -C make clean 2>/dev/null; true

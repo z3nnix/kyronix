@@ -269,6 +269,7 @@ test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
 	    cp build/bin/$$app $(TEST_ROOTFS)/bin/; \
 	done
 	cp build/bin/fetch     $(TEST_ROOTFS)/bin/
+	cp build/bin/make      $(TEST_ROOTFS)/bin/
 	cd $(TEST_ROOTFS) && find . | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$(TEST_INITRD) 2>/dev/null
 	@echo "  Built: $(TEST_INITRD)"
 
