@@ -2,6 +2,7 @@
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
+#include "crypto/chacha20.h"
 #include "elf.h"
 #include "fs/vfs.h"
 #include "lib/log.h"
@@ -15,12 +16,9 @@
 #include "syscall/syscall.h"
 
 uint64_t kern_rand64(void) {
-    static uint64_t s;
-    if (!s) s = g_ticks ^ 0xdeadbeef13579aceULL;
-    s ^= s << 13;
-    s ^= s >> 7;
-    s ^= s << 17;
-    return s;
+    uint64_t v;
+    chacha20_rng_bytes(&g_chacha20_rng, (uint8_t *) &v, sizeof(v));
+    return v;
 }
 
 #define STACK_MAX_ARGS 4096

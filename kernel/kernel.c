@@ -29,6 +29,7 @@
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "crypto/chacha20.h"
 #include "mm/heap.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -215,6 +216,32 @@ void kmain(void) {
     kstatus("Initialising virtual tty", true);
     pit_init();
     kstatus("Starting timer", true);
+
+    {
+        uint8_t seed[32];
+        uint32_t lo, hi;
+        int rdrand_ok;
+        __asm__ volatile("cpuid" : "=c"(lo) : "a"(1) : "ebx", "edx", "memory");
+        rdrand_ok = (int)((lo >> 30) & 1);
+        if (rdrand_ok) {
+            for (int i = 0; i < 32; i += 8) {
+                uint64_t v;
+                __asm__ volatile("1: rdrand %0; jnc 1b" : "=r"(v) :: "cc");
+                __builtin_memcpy(seed + i, &v, 8);
+            }
+        } else {
+            __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+            uint64_t tsc = (uint64_t)hi << 32 | lo;
+            uint64_t ticks = g_ticks;
+            __builtin_memcpy(seed, &tsc, 8);
+            __builtin_memcpy(seed + 8, &ticks, 8);
+            for (int i = 16; i < 32; i++)
+                seed[i] = (uint8_t)(tsc >> ((i % 8) * 8)) ^ 0xBB;
+        }
+        chacha20_rng_init(&g_chacha20_rng, seed);
+        kstatus("Initialising CSPRNG", true);
+    }
+
     sti();
     ps2mouse_init();
     kstatus("Initialising PS/2 mouse", true);

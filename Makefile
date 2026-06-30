@@ -1,5 +1,3 @@
-# KyronixOS build system
-
 TARGET     := kernel.elf
 ISO        := kyronix.iso
 DISK_IMG   := disk.img
@@ -118,7 +116,8 @@ SRCS := \
     kernel/drivers/vt.c               \
     kernel/lib/string.c               \
     kernel/lib/printf.c                \
-    kernel/lib/log.c
+    kernel/lib/log.c                   \
+    kernel/crypto/chacha20.c
 
 ASM_SRCS := \
     kernel/arch/x86_64/idt_stubs.S    \
@@ -336,6 +335,14 @@ test-run-log: test-iso $(DISK_IMG)
 	    echo "FAIL"; \
 	    exit 1; \
 	fi
+
+FMT_FILES := $(shell find kernel/ -name '*.[ch]')
+
+fmt: $(FMT_FILES)
+	clang-format -i -style=file $?
+
+fmt-check: $(FMT_FILES)
+	clang-format --dry-run -Werror -style=file $?
 
 clean:
 	rm -f $(TARGET) $(ISO) $(INITRD) $(TEST_ISO) $(TEST_INITRD) $(DISK_IMG)

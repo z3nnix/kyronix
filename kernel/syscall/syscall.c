@@ -24,6 +24,7 @@
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
+#include "crypto/chacha20.h"
 
 /* linuh errno values */
 #define EPERM 1
@@ -1679,56 +1680,13 @@ static int64_t sys_futex(uint32_t* uaddr, int op, uint32_t val, void* timeout, u
     }
 }
 
-static int rdrand_supported(void)
-{
-    uint32_t ecx;
-    __asm__ volatile("cpuid" : "=c"(ecx) : "a"(1) : "ebx", "edx", "memory");
-    return (int) ((ecx >> 30) & 1);
-}
-
 static int64_t sys_getrandom(void* buf, uint64_t len, uint32_t flags)
 {
     (void) flags;
     if (!buf || !len)
         return 0;
 
-    static int rdrand_ok = -1;
-    if (rdrand_ok < 0)
-        rdrand_ok = rdrand_supported();
-
-    uint8_t* p = (uint8_t*) buf;
-    uint64_t i = 0;
-
-    if (rdrand_ok)
-    {
-        while (i + 8 <= len)
-        {
-            uint64_t v;
-            __asm__ volatile("1: rdrand %0; jnc 1b" : "=r"(v) :: "cc");
-            __builtin_memcpy(p + i, &v, 8);
-            i += 8;
-        }
-        if (i < len)
-        {
-            uint64_t v;
-            __asm__ volatile("1: rdrand %0; jnc 1b" : "=r"(v) :: "cc");
-            __builtin_memcpy(p + i, &v, len - i);
-        }
-    }
-    else
-    {
-        /* TSC + g_ticks xorshift64 fallback */
-        uint32_t lo, hi;
-        __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-        uint64_t seed = ((uint64_t) hi << 32 | lo) ^ g_ticks;
-        for (; i < len; i++)
-        {
-            seed ^= seed << 13;
-            seed ^= seed >> 7;
-            seed ^= seed << 17;
-            p[i] = (uint8_t) seed;
-        }
-    }
+    chacha20_rng_bytes(&g_chacha20_rng, (uint8_t*) buf, (size_t) len);
     return (int64_t) len;
 }
 
