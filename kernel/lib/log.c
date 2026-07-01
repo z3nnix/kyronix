@@ -11,6 +11,7 @@ static void log_putchar(char c, void *ctx) {
 static int g_klog_level = KLOG_WARN;
 
 void klog_set_level(int level) { g_klog_level = level; }
+int klog_get_level(void) { return g_klog_level; }
 
 void klog_printf(int level, const char *fmt, ...) {
     if (level > g_klog_level) return;

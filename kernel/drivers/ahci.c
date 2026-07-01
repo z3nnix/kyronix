@@ -2,6 +2,7 @@
 #include "../arch/x86_64/cpu.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
+#include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
 #include "pci.h"
@@ -200,19 +201,32 @@ static bool port_init(int idx) {
     ap->cmdlist_phys = (uint64_t) pmm_alloc_zeroed();
     if (!ap->cmdlist_phys) return false;
     ap->cmdlist = (hba_cmd_hdr_t *) phys_to_virt(ap->cmdlist_phys);
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_page_perm((void *) ap->cmdlist_phys);
+#endif
 
     ap->fis_phys = (uint64_t) pmm_alloc_zeroed();
     if (!ap->fis_phys) return false;
     ap->fis_buf = (uint8_t *) phys_to_virt(ap->fis_phys);
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_page_perm((void *) ap->fis_phys);
+#endif
 
     ap->cmdtbl_phys = (uint64_t) pmm_alloc_zeroed();
     if (!ap->cmdtbl_phys) return false;
     ap->cmdtbl = (hba_cmd_tbl_t *) phys_to_virt(ap->cmdtbl_phys);
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_page_perm((void *) ap->cmdtbl_phys);
+#endif
 
     ap->dma_phys = (uint64_t) pmm_alloc_contiguous(AHCI_DMA_PAGES);
     if (!ap->dma_phys) return false;
     ap->dma_buf = (uint8_t *) phys_to_virt(ap->dma_phys);
     memset(ap->dma_buf, 0, AHCI_DMA_PAGES * PAGE_SIZE);
+#ifdef CONFIG_KMEMLEAK
+    for (uint64_t i = 0; i < AHCI_DMA_PAGES; i++)
+        kmemleak_page_perm((void *)(ap->dma_phys + i * PAGE_SIZE));
+#endif
 
     ap->cmdlist[0].ctba = (uint32_t) (ap->cmdtbl_phys & 0xFFFFFFFFu);
     ap->cmdlist[0].ctbau = (uint32_t) (ap->cmdtbl_phys >> 32);

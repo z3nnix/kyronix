@@ -12,3 +12,5 @@ void *krealloc(void *ptr, uint64_t new_size);
 void kfree(void *ptr);
 void heap_stats(void);
 int64_t heap_alloc_delta(void);
+uint64_t heap_brk(void);
+void heap_walk_used(void (*callback)(void *data, uint64_t size, void *user), void *user);

@@ -12,12 +12,15 @@ PHDRS {
 SECTIONS {
     . = 0xffffffff80000000;
 
+    __text_start = .;
     .text : {
         *(.text .text.*)
     } :text
+    __text_end = .;
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    __rodata_start = .;
     .rodata : {
         *(.rodata .rodata.*)
     } :rodata
@@ -33,17 +36,22 @@ SECTIONS {
     .limine_requests_end : {
         KEEP(*(.limine_requests_end))
     } :rodata
+    __rodata_end = .;
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    __data_start = .;
     .data : {
         *(.data .data.*)
     } :data
+    __data_end = .;
 
+    __bss_start = .;
     .bss : {
         *(COMMON)
         *(.bss .bss.*)
     } :data
+    __bss_end = .;
 
     /DISCARD/ : {
         *(.eh_frame*)

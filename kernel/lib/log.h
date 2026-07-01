@@ -1,6 +1,7 @@
 #pragma once
 
 void klog_set_level(int level);
+int klog_get_level(void);
 void klog_printf(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 #define KLOG_ERROR 0

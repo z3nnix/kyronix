@@ -23,35 +23,46 @@ static const char *cur_phase = NULL;
 static int ph_total = 0;
 static int ph_passed = 0;
 static int ph_failed = 0;
-static int ph_leak = 0;
 
-static int total_leak = 0;
-static int leaky_tests = 0;
+static int kmemleak_on = 0;
 
-static int64_t read_physdelta(void) {
-    char buf[256];
-    int fd = open("/proc/memstats", O_RDONLY);
+static int dump_kmemleak(int print) {
+    char buf[16384];
+    int fd = open("/proc/kmemleak", O_RDONLY);
     if (fd < 0) return -1;
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     if (n <= 0) return -1;
     buf[n] = '\0';
-    const char *p = strstr(buf, "PhysDelta:");
-    if (!p) return -1;
-    p += 10;
-    while (*p == ' ' || *p == '\t') p++;
-    return (int64_t)atol(p);
+    if (print) {
+            char *line = buf;
+        char *nl;
+        while ((nl = strchr(line, '\n')) != NULL) {
+            *nl = '\0';
+            if (line[0] == ' ') {
+                fprintf(stderr, "  %s\n", line);
+            } else if (strstr(line, "KMEMLEAK:") == line) {
+                fprintf(stderr, ANSI_CYAN "  %s" ANSI_RESET "\n", line);
+            }
+            line = nl + 1;
+        }
+    }
+    const char *p = strstr(buf, "KMEMLEAK:");
+    if (!p) return 0;
+    const char *q = p + 9;
+    while (*q == ' ') q++;
+    return (int)atol(q);
 }
 
 static void phase_summary(void) {
-    fprintf(stderr, "  " ANSI_CYAN "--- %s: %d/%d PASS, %d FAIL, %d pages leaked" ANSI_RESET "\n", cur_phase,
-            ph_passed, ph_total, ph_failed, ph_leak);
+    fprintf(stderr, "  " ANSI_CYAN "--- %s: %d/%d PASS, %d FAIL" ANSI_RESET "\n", cur_phase,
+            ph_passed, ph_total, ph_failed);
 }
 
 static void phase_begin(const char *phase) {
     if (cur_phase) phase_summary();
     cur_phase = phase;
-    ph_total = ph_passed = ph_failed = ph_leak = 0;
+    ph_total = ph_passed = ph_failed = 0;
     fprintf(stderr, "\n" ANSI_CYAN "[%s]" ANSI_RESET "\n", phase);
 }
 
@@ -321,43 +332,34 @@ int main(void) {
     fprintf(stderr, ANSI_CYAN "Kyronix Test Runner" ANSI_RESET "\n");
     fprintf(stderr, "--------------------\n");
 
+    int kml = dump_kmemleak(0);
+    if (kml >= 0) {
+        kmemleak_on = 1;
+        fprintf(stderr, ANSI_CYAN "  kmemleak: enabled" ANSI_RESET "\n");
+    } else {
+        fprintf(stderr, ANSI_CYAN "  kmemleak: not available" ANSI_RESET "\n");
+    }
+    fprintf(stderr, "\n");
+
     for (int i = 0; i < test_count; i++) {
         test_entry_t *e = &test_registry[i];
 
         if (!cur_phase || strcmp(cur_phase, e->phase) != 0) phase_begin(e->phase);
 
         fflush(stderr);
-        int64_t mem_before = read_physdelta();
         fprintf(stderr, "  %-30s ", e->name);
         fflush(stderr);
 
         int result = run_sandbox(e->name, e->func);
 
-        int64_t mem_after = read_physdelta();
-        int leak = 0;
-        if (mem_before >= 0 && mem_after >= 0) {
-            leak = (int)(mem_after - mem_before);
-            if (leak > 0) {
-                leaky_tests++;
-                total_leak += leak;
-                ph_leak += leak;
-            }
-        }
-
         if (result == TEST_PASS) {
             passed++;
             ph_passed++;
-            if (leak > 0)
-                fprintf(stderr, ANSI_GREEN "PASS" ANSI_RESET "  [+%d pages]\n", leak);
-            else
-                fprintf(stderr, ANSI_GREEN "PASS" ANSI_RESET "\n");
+            fprintf(stderr, ANSI_GREEN "PASS" ANSI_RESET "\n");
         } else {
             failed++;
             ph_failed++;
-            if (leak > 0)
-                fprintf(stderr, ANSI_RED "FAIL" ANSI_RESET "  [+%d pages]\n", leak);
-            else
-                fprintf(stderr, ANSI_RED "FAIL" ANSI_RESET "\n");
+            fprintf(stderr, ANSI_RED "FAIL" ANSI_RESET "\n");
         }
         total++;
     }
@@ -366,10 +368,17 @@ int main(void) {
 
     fprintf(stderr, "\n" ANSI_CYAN "RESULT:" ANSI_RESET " %d/%d PASS, %d FAIL", passed, total,
             failed);
-    if (total_leak > 0)
-        fprintf(stderr, "  " ANSI_RED "+%d pages leaked across %d test(s)" ANSI_RESET, total_leak, leaky_tests);
-    else
-        fprintf(stderr, "  " ANSI_GREEN "no memory leaks" ANSI_RESET);
+
+    if (kmemleak_on) {
+        fprintf(stderr, "\n" ANSI_CYAN "/proc/kmemleak:" ANSI_RESET "\n");
+        int kml = dump_kmemleak(1);
+        if (kml > 0) {
+            fprintf(stderr, ANSI_RED "  KMEMLEAK: %d leak(s) detected" ANSI_RESET, kml);
+        } else {
+            fprintf(stderr, ANSI_GREEN "  KMEMLEAK: no leaks" ANSI_RESET);
+        }
+    }
+
     fprintf(stderr, "\n");
 
     if (nfailures > 0) {

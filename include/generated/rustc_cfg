@@ -1,0 +1,3 @@
+--cfg=CONFIG_LOG_LEVEL="1"
+--cfg=CONFIG_KMEMLEAK
+--cfg=CONFIG_KMEMLEAK="y"

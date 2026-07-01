@@ -1,13 +1,33 @@
+# cache & local configs
 .claude
-*.o
-*.d
-*.elf
-*.cpio
+.config
+
+# kconfig build artifacts
+scripts/kconfig/*.o
+scripts/kconfig/conf
+scripts/kconfig/nconf
+scripts/kconfig/zconf.tab.c
+scripts/kconfig/zconf.tab.h
+scripts/kconfig/zconf.lex.c
+scripts/kconfig/lex.yy.c
+scripts/kconfig/*.tab.c
+scripts/kconfig/*.tab.h
+
+# logs
 *.log
+*.d
+
+# images
+*.cpio
 kyronix.iso
 kyronix-test.iso
+
+# build artifacts
+*.o
+*.elf
 test_rootfs/
 build/*
 iso_root/*
+
+# unecessary blobs
 rootfs/usr/lib/libLLVM.so.19.1
-disk.img

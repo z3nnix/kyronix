@@ -3,6 +3,7 @@
 #include "../arch/x86_64/idt.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
+#include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../net/net.h"
 #include "pci.h"
@@ -140,6 +141,11 @@ static bool setup_queue(uint16_t qidx, virtq_t *q) {
     uint64_t phys = (uint64_t) pmm_alloc_contiguous(n);
     if (!phys) return false;
 
+#ifdef CONFIG_KMEMLEAK
+    for (uint32_t i = 0; i < n; i++)
+        kmemleak_page_perm((void *)(phys + i * PAGE_SIZE));
+#endif
+
     vq_init(q, phys, sz);
     io_w32(REG_QADDR, (uint32_t) (phys / PAGE_SIZE));
     return true;
@@ -245,11 +251,9 @@ void virtnet_init(void) {
     io_w32(REG_DRVFEAT, hf & F_NET_MAC);
     io_w8(REG_STATUS, S_ACK | S_DRIVER | S_FROK);
 
-    // read mac
     for (int i = 0; i < 6; i++) g_mac[i] = io_r8((uint8_t) (REG_MAC + i));
     log_info("virtio-net: MAC %02x:%02x:%02x:%02x:%02x:%02x", g_mac[0], g_mac[1], g_mac[2],
              g_mac[3], g_mac[4], g_mac[5]);
-    // setup rx
     if (!setup_queue(0, &g_rxq) || !setup_queue(1, &g_txq)) {
         log_warn("virtio-net: queue setup failed");
         io_w8(REG_STATUS, S_FAILED);
@@ -264,6 +268,9 @@ void virtnet_init(void) {
         void *p = pmm_alloc_zeroed();
         if (!p) break;
         g_tx_phys[i] = (uint64_t) p;
+#ifdef CONFIG_KMEMLEAK
+        kmemleak_page_perm(p);
+#endif
         got = (uint16_t) (i + 1);
     }
     g_tx_nslots = got;
@@ -279,6 +286,9 @@ void virtnet_init(void) {
         void *p = pmm_alloc_zeroed();
         if (!p) break;
         g_rx_phys[i] = (uint64_t) p;
+#ifdef CONFIG_KMEMLEAK
+        kmemleak_page_perm(p);
+#endif
         rx_post_buf(i, g_rx_phys[i]);
     }
     io_w8(REG_STATUS, S_ACK | S_DRIVER | S_FROK | S_DRVOK);

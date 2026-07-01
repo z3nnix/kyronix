@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: ISC
+# Kyronix kernel configuration
+#
+# Use 'make nconfig' to edit, or edit .config directly.
+
+mainmenu "Kyronix Kernel Configuration"
+
+config KMEMLEAK
+	bool "Kernel memory leak detector"
+	default y
+	help
+	  Enable kmemleak to track kernel heap and page allocations.
+	  Scans data/bss, heap, page tables, and kernel stacks to
+	  detect unreferenced objects.
+
+config LOG_LEVEL
+	int "Default kernel log level (0-3)"
+	range 0 3
+	default 1
+	help
+	  0=KLOG_ERROR   (only errors)
+	  1=KLOG_WARN    (errors + warnings, default)
+	  2=KLOG_INFO    (errors + warnings + info)
+	  3=KLOG_DEBUG   (all messages)

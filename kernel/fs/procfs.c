@@ -1,8 +1,12 @@
 #include "procfs.h"
 #include "arch/x86_64/pit.h"
+#include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mm/heap.h"
+#ifdef CONFIG_KMEMLEAK
+#include "mm/kmemleak.h"
+#endif
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "proc/jail.h"
@@ -13,6 +17,7 @@
 #define ENOENT 2
 #define EPERM 1
 #define EFAULT 14
+#define ENOMEM 12
 
 static int64_t read_buf(char *out, uint64_t len, uint64_t off, const char *src, uint64_t sz) {
     if (!uptr_ok_w(out, len)) return -(int64_t) EFAULT;
@@ -117,7 +122,7 @@ static int64_t proc_memstats_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 
 static int64_t proc_meminfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
-    uint64_t total = pmm_total_pages() * (PAGE_SIZE / 1024);
+    uint64_t total = pmm_usable_pages() * (PAGE_SIZE / 1024);
     uint64_t free = pmm_free_pages() * (PAGE_SIZE / 1024);
     uint64_t used = total > free ? total - free : 0;
     char tmp[512];
@@ -463,6 +468,71 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
     return true;
 }
 
+#ifdef CONFIG_KMEMLEAK
+static int64_t proc_kmemleak_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    proc_t *p = g_current_proc;
+    if (p && p->euid != 0) return -(int64_t) EPERM;
+
+    static char *kmem_buf = NULL;
+    static uint64_t kmem_sz = 0;
+
+    if (off == 0) {
+        uint64_t sz = 8192;
+        for (;;) {
+            char *nb = krealloc(kmem_buf, sz);
+            if (!nb) {
+                kfree(kmem_buf);
+                kmem_buf = NULL;
+                kmem_sz = 0;
+                return -(int64_t) ENOMEM;
+            }
+            kmem_buf = nb;
+            kmem_sz = sz;
+            int leaked = kmemleak_report(kmem_buf, kmem_sz);
+            (void) leaked;
+            uint64_t used = strlen(kmem_buf);
+            if (used + 128 < sz) break;
+            if (sz >= 262144) break;
+            sz *= 2;
+        }
+    }
+    if (!kmem_buf) return 0;
+    return read_buf(buf, len, off, kmem_buf, strlen(kmem_buf));
+}
+#endif
+
+static const char *klog_level_name(int level) {
+    switch (level) {
+    case KLOG_ERROR: return "error";
+    case KLOG_WARN:  return "warn";
+    case KLOG_INFO:  return "info";
+    case KLOG_DEBUG: return "debug";
+    default:         return "?";
+    }
+}
+
+static int64_t proc_loglevel_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    char tmp[32];
+    int lvl = klog_get_level();
+    int sz = snprintf(tmp, sizeof(tmp), "%d (%s)\n", lvl, klog_level_name(lvl));
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_loglevel_write(vfs_node_t *n, const char *buf, uint64_t len) {
+    (void) n;
+    if (g_current_proc && g_current_proc->euid != 0)
+        return -(int64_t) EPERM;
+    char c = buf[0];
+    int v = c - '0';
+    if (v >= 0 && v <= 3) {
+        klog_set_level(v);
+        return (int64_t) len;
+    }
+    return -(int64_t) EINVAL;
+}
+
 void procfs_init(void) {
     vfs_mkdir_p("/proc", 0555);
     vfs_mkdir_p("/proc/self", 0555);
@@ -495,6 +565,14 @@ void procfs_init(void) {
     vfs_create_chr("/proc/self/stat", proc_self_stat_read, NULL);
     vfs_create_chr("/proc/self/maps", proc_self_maps_read, NULL);
 
-    vfs_node_t *pm = vfs_create_chr("/proc/self/pagemap", proc_self_pagemap_read, NULL);
+    vfs_node_t *pm =     vfs_create_chr("/proc/self/pagemap", proc_self_pagemap_read, NULL);
     if (pm) pm->mode = S_IFCHR | 0400;
+
+    vfs_node_t *ll = vfs_create_chr("/proc/loglevel", proc_loglevel_read, proc_loglevel_write);
+    if (ll) ll->mode = S_IFCHR | 0644;
+
+#ifdef CONFIG_KMEMLEAK
+    vfs_node_t *kml = vfs_create_chr("/proc/kmemleak", proc_kmemleak_read, NULL);
+    if (kml) kml->mode = S_IFCHR | 0400;
+#endif
 }

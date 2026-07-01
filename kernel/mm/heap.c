@@ -5,6 +5,9 @@
 #include "lib/string.h"
 #include "pmm.h"
 #include "vmm.h"
+#ifdef CONFIG_KMEMLEAK
+#include "kmemleak.h"
+#endif
 
 typedef struct block_hdr {
     uint64_t size;
@@ -106,11 +109,18 @@ void *kmalloc(uint64_t size) {
     blk->free = 0;
     g_kmalloc_total += blk->size;
     irq_restore(flags);
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_track((uint8_t *) blk + HDR_SIZE, blk->size);
+#endif
     return (uint8_t *) blk + HDR_SIZE;
 }
 
 void kfree(void *ptr) {
     if (!ptr) return;
+
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_untrack(ptr);
+#endif
 
     uint64_t flags = irq_save();
 
@@ -164,6 +174,19 @@ void *krealloc(void *ptr, uint64_t new_size) {
 }
 
 int64_t heap_alloc_delta(void) { return (int64_t) (g_kmalloc_total - g_kfree_total); }
+
+uint64_t heap_brk(void) { return g_brk; }
+
+void heap_walk_used(void (*callback)(void *data, uint64_t size, void *user), void *user) {
+    uint64_t flags = irq_save();
+    block_hdr_t *b = g_head;
+    while (b) {
+        if (!b->free)
+            callback((uint8_t *) b + HDR_SIZE, b->size, user);
+        b = b->next;
+    }
+    irq_restore(flags);
+}
 
 void heap_stats(void) {
     uint64_t free_bytes = 0, used_bytes = 0, nblocks = 0;

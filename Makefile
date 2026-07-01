@@ -14,6 +14,18 @@ endif
 
 LWIP_SRC := kernel/net/lwip/src
 
+# === Kernel configuration (Kconfig toolchain) ===
+KCONF := scripts/kconfig/conf
+NCONF := scripts/kconfig/nconf
+CONFIG_H := kernel/config.h
+
+# Bootstrap: ensure kernel/config.h exists for -include (needed during Makefile parsing for parallel builds)
+$(shell if ! [ -f $(CONFIG_H) ]; then \
+	echo '/* Auto-generated */' > $(CONFIG_H); \
+	echo '#define CONFIG_KMEMLEAK 1' >> $(CONFIG_H); \
+	echo '#define CONFIG_LOG_LEVEL 1' >> $(CONFIG_H); \
+fi)
+
 CFLAGS := \
     -std=c11           \
     -O2                \
@@ -31,6 +43,8 @@ CFLAGS := \
     -mno-red-zone      \
     -mcmodel=kernel    \
     -U_FORTIFY_SOURCE  \
+    -fno-omit-frame-pointer \
+    -include $(CONFIG_H) \
     -Ikernel           \
     -Ikernel/boot      \
     -Ikernel/net       \
@@ -117,6 +131,8 @@ SRCS := \
     kernel/lib/string.c               \
     kernel/lib/printf.c                \
     kernel/lib/log.c                   \
+    kernel/lib/kallsyms.c             \
+    kernel/mm/kmemleak.c              \
     kernel/crypto/chacha20.c
 
 ASM_SRCS := \
@@ -128,12 +144,36 @@ ASM_SRCS := \
 OBJS := $(SRCS:%.c=$(BUILD_DIR)/%.o) $(ASM_SRCS:%.S=$(BUILD_DIR)/%.o)
 DEPS := $(OBJS:.o=.d)
 
+# === Kallsyms (post-process) ===
+# kallsyms_data.c is checked in as a stub; 'make kallsyms' regenerates it
+# from the final kernel.elf via nm(1).
+KALLSYMS_SRC := kernel/kallsyms_data.c
+KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
+
 SRC_DIR  := .
 INITRD   := initrd.cpio
 
-.PHONY: all iso run run-serial run-uefi clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk
+.PHONY: all iso run run-serial run-uefi clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk config.h kallsyms nconfig
 
-all: $(TARGET) $(INITRD) $(DISK_IMG)
+all: config.h $(TARGET) $(INITRD) $(DISK_IMG)
+
+# Build kconfig tools from source (one-time, cached by make)
+$(KCONF) $(NCONF): $(wildcard scripts/kconfig/*.c scripts/kconfig/*.h scripts/kconfig/*.l scripts/kconfig/*.y scripts/kconfig/Makefile)
+	$(MAKE) -s -C $(@D)
+
+# Generate kernel/config.h from kernel/Kconfig via kconfig tools
+$(CONFIG_H): kernel/Kconfig $(KCONF)
+	@KCONFIG_AUTOHEADER=$@ $(KCONF) --syncconfig kernel/Kconfig < /dev/null 2>/dev/null
+	@touch $@
+
+# Root config.h acts as a sentinel
+config.h: $(CONFIG_H)
+	@touch $@
+
+# Interactive kernel config editor (ncurses)
+nconfig: kernel/Kconfig $(NCONF)
+	$(NCONF) kernel/Kconfig
+	KCONFIG_AUTOHEADER=$(CONFIG_H) $(KCONF) --syncconfig kernel/Kconfig < /dev/null
 
 $(DISK_IMG):
 	dd if=/dev/zero of=$@ bs=1M count=128 status=none
@@ -159,8 +199,23 @@ $(INITRD): $(INITRD_DEPS) | user-build
 	@cd rootfs && find . -not -name '.gitignore' | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$@ 2>/dev/null
 	@echo "  Built: $@"
 
-$(TARGET): $(OBJS)
-	$(LD) $(LDFLAGS) -o $@ $^
+# Regenerate kallsyms table from the freshly-linked kernel.elf
+kallsyms: $(TARGET)
+	@echo "  GEN     $(KALLSYMS_SRC)"
+	@nm -n $(TARGET) | grep -E ' [TtWw] ' | \
+	  awk 'BEGIN { n = 0; \
+	               print "#include \"lib/kallsyms.h\""; \
+	               print "#include <stdint.h>"; \
+	               print "const sym_entry_t kallsyms_table[] = {"; } \
+	       { printf "    { 0x%s, \"%s\" },\n", $$1, $$3; n++ } \
+	       END { print "};"; print "const int kallsyms_num = " n ";" }' > $(KALLSYMS_SRC).tmp && \
+	mv $(KALLSYMS_SRC).tmp $(KALLSYMS_SRC)
+	@echo "  KALLSYMS regenerated ($$(wc -l < $(KALLSYMS_SRC)) lines)"
+
+$(KALLSYMS_OBJ): $(KALLSYMS_SRC)
+
+$(TARGET): config.h $(OBJS) $(KALLSYMS_OBJ)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(KALLSYMS_OBJ)
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(@D)
@@ -326,8 +381,19 @@ test-run-log: test-iso $(DISK_IMG)
 	    -device ide-hd,drive=hd0,bus=ahci.0 \
 	    -serial file:test.log       \
 	    -no-reboot 2>/dev/null;     \
-	grep -E "(TEST|RESULT|ALL|SOME)" test.log 2>/dev/null; \
+	grep -E "(TEST|RESULT|ALL|SOME|KMEMLEAK)" test.log 2>/dev/null; \
 	if grep -q "ALL TESTS PASSED" test.log 2>/dev/null; then \
+	    pass=1; \
+	else \
+	    pass=0; \
+	fi; \
+	leaks=$$(grep -oP 'KMEMLEAK: \K[0-9]+' test.log 2>/dev/null || echo 0); \
+	if [ "$$leaks" -gt 0 ] && [ "$$leaks" != "0" ]; then \
+	    echo ""; \
+	    echo "KMEMLEAK: $$leaks leak(s) detected in kernel heap"; \
+	    pass=0; \
+	fi; \
+	if [ "$$pass" = "1" ]; then \
 	    echo ""; \
 	    echo "PASS"; \
 	else \
@@ -346,6 +412,8 @@ fmt-check: $(FMT_FILES)
 
 clean:
 	rm -f $(TARGET) $(ISO) $(INITRD) $(TEST_ISO) $(TEST_INITRD) $(DISK_IMG)
+	rm -f $(CONFIG_H) .config
 	rm -rf $(BUILD_DIR) iso_root rootfs/bin $(TEST_ROOTFS)
 	$(MAKE) -C user clean
+	$(MAKE) -C scripts/kconfig clean 2>/dev/null; true
 	$(MAKE) -C $(LIMINE_DIR) clean 2>/dev/null; true

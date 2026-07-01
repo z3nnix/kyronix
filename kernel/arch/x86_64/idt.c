@@ -209,7 +209,7 @@ void isr_dispatch(cpu_state_t *state) {
             proc_do_exit(-sig);
         }
 
-        kprintf("\n\n!!! KERNEL EXCEPTION !!! pid=%u\n", g_current_proc ? g_current_proc->pid : 0);
+        kprintf("\n\n!!! KERNEL PANIC !!! pid=%u\n", g_current_proc ? g_current_proc->pid : 0);
         kprintf("  %s  (vector %lu)\n", exc_name[n], n);
         if (n == 8) kprintf("  (double fault - usually a kernel stack overflow)\n");
         kprintf("  error = 0x%016lx\n", state->error_code);

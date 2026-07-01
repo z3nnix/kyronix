@@ -2,6 +2,9 @@
 #include "arch/x86_64/cpu.h"
 #include "lib/log.h"
 #include "lib/string.h"
+#ifdef CONFIG_KMEMLEAK
+#include "kmemleak.h"
+#endif
 
 uint64_t g_hhdm_offset;
 
@@ -15,6 +18,7 @@ static pmm_t g_pmm;
 
 static uint64_t g_alloc_total = 0;
 static uint64_t g_free_total = 0;
+static uint64_t g_usable_pages = 0;
 
 static inline void bitmap_set_free(uint64_t page) {
     g_pmm.words[page >> 6] |= (1ULL << (page & 63));
@@ -31,9 +35,12 @@ static inline int bitmap_is_free(uint64_t page) {
 void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset) {
     g_hhdm_offset = hhdm_offset;
 
+    log_info("PMM: memory map (%lu entries):", mmap->entry_count);
     uint64_t highest = 0;
     for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry *e = mmap->entries[i];
+        log_info("  [%lu] base=0x%016lx  length=0x%016lx  type=%lu",
+                 i, e->base, e->length, e->type);
         if (e->type != LIMINE_MEMMAP_USABLE) continue;
         uint64_t top = e->base + e->length;
         if (top > highest) highest = top;
@@ -41,6 +48,9 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset) {
 
     g_pmm.total_pages = highest >> PAGE_SHIFT;
     g_pmm.free_pages = 0;
+    g_usable_pages = 0;
+
+    log_info("PMM: highest=0x%016lx  total_pages=%lu", highest, g_pmm.total_pages);
 
     uint64_t bitmap_bytes = PAGE_ALIGN_UP((g_pmm.total_pages + 7) / 8);
     uint64_t bitmap_phys = 0;
@@ -62,6 +72,7 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset) {
 
         uint64_t first = e->base >> PAGE_SHIFT;
         uint64_t count = e->length >> PAGE_SHIFT;
+        g_usable_pages += count;
         for (uint64_t p = first; p < first + count; p++) {
             bitmap_set_free(p);
             g_pmm.free_pages++;
@@ -96,7 +107,11 @@ void *pmm_alloc(void) {
         g_pmm.words[wi] &= ~(1ULL << bit); /* mark used */
         g_pmm.free_pages--;
         g_alloc_total++;
-        return (void *) (page << PAGE_SHIFT);
+        void *phys = (void *) (page << PAGE_SHIFT);
+#ifdef CONFIG_KMEMLEAK
+        kmemleak_track_page(phys);
+#endif
+        return phys;
     }
     return NULL; /* out of phys memory */
 }
@@ -116,6 +131,9 @@ void *pmm_alloc_contiguous(uint64_t n) {
         for (uint64_t i = 0; i < n; i++) {
             bitmap_set_used(s + i);
             g_pmm.free_pages--;
+#ifdef CONFIG_KMEMLEAK
+            kmemleak_track_page((void *) ((s + i) << PAGE_SHIFT));
+#endif
         }
         g_alloc_total += n;
         return (void *) (s << PAGE_SHIFT);
@@ -129,9 +147,13 @@ void pmm_free(void *phys) {
     bitmap_set_free(page);
     g_pmm.free_pages++;
     g_free_total++;
+#ifdef CONFIG_KMEMLEAK
+    kmemleak_untrack_page(phys);
+#endif
 }
 
 uint64_t pmm_free_pages(void) { return g_pmm.free_pages; }
 uint64_t pmm_total_pages(void) { return g_pmm.total_pages; }
+uint64_t pmm_usable_pages(void) { return g_usable_pages; }
 uint64_t pmm_alloc_total(void) { return g_alloc_total; }
 uint64_t pmm_free_total(void) { return g_free_total; }
