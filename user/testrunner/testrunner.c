@@ -395,6 +395,7 @@ int main(void) {
         fprintf(stderr, ANSI_RED "SOME TESTS FAILED" ANSI_RESET "\n");
     }
 
+    fprintf(stderr, "TESTS_EOF\n");
     fflush(stderr);
     reboot(LINUX_REBOOT_CMD_RESTART);
 }
