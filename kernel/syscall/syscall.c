@@ -2381,8 +2381,8 @@ void syscall_dispatch(syscall_frame_t *f) {
             ret = -(int64_t) EPERM;
             break;
         }
-        cpu_halt();
-        ret = 0;
+        outw(0x604, 0x2000);
+        for (;;) hlt();
         break;
     case 164:
         ret = host_priv() ? 0 : -(int64_t) EPERM;

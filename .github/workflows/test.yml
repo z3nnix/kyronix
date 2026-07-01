@@ -24,11 +24,14 @@ jobs:
         run: make test-iso
       
       - name: Run tests in QEMU
-        timeout-minutes: 2
         run: |
-          make test-run 2>&1 || true
+          timeout 2m make test-run 2>&1 | tee test.log || true
           echo "--- serial log ---"
           cat test.log 2>/dev/null || true
+          if ! grep -q "TESTS_EOF" test.log 2>/dev/null; then
+            echo "FAIL: QEMU timed out or crashed before tests completed"
+            exit 1
+          fi
           echo "--- check kmemleak ---"
           if grep -qE "KMEMLEAK: [1-9]" test.log 2>/dev/null; then
             echo "FAIL: kernel heap memory leak detected"
