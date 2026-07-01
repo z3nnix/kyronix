@@ -2,6 +2,7 @@
 
 > Operating system that sucks less.
 
+![Commits per month](https://img.shields.io/github/commit-activity/m/kyronix-project/kyronix)
 [![test](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml/badge.svg)](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml)
 [![ISC](https://img.shields.io/badge/license-ISC-blue)](#)
 [![x86-64](https://img.shields.io/badge/arch-x86__64-lightgrey)](#)
