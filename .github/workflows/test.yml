@@ -21,7 +21,8 @@ jobs:
           sudo ln -sf /usr/bin/automake /usr/bin/automake-1.15
       
       - name: Build test ISO
-        run: make test-iso
+        run: | 
+          make test-iso
       
       - name: Run tests in QEMU
         run: |

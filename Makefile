@@ -155,9 +155,9 @@ KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
 SRC_DIR  := .
 INITRD   := initrd.cpio
 
-.PHONY: all iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk config.h kallsyms nconfig help
+.PHONY: all iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
 
-.PHONY: all iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk config.h kallsyms nconfig help
+.PHONY: all iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
 
 help:
 	@echo "Usage: make <target>"
@@ -168,6 +168,7 @@ help:
 	@echo "  live-iso   Build live ISO        (kyronix-live.iso)"
 	@echo "  disk       Create disk.img from rootfs/  (DESTROYS persistence)"
 	@echo "  test-iso   Build test ISO        (kyronix-test.iso)"
+	@echo "  test-disk  Create test disk image  (test-disk.img)"
 	@echo "  test-initrd Build test initrd     (test-initrd.cpio)"
 	@echo "  kallsyms   Regenerate kallsyms table"
 	@echo "  nconfig    Interactive kernel config"
@@ -407,9 +408,10 @@ run-uefi:
 	    -device ahci,id=ahci \
 	    -device ide-hd,drive=hd0,bus=ahci.0
 
-TEST_ROOTFS := test_rootfs
-TEST_INITRD := test-initrd.cpio
-TEST_ISO    := kyronix-test.iso
+TEST_ROOTFS    := test_rootfs
+TEST_INITRD    := test-initrd.cpio
+TEST_ISO       := kyronix-test.iso
+TEST_DISK_IMG  := test-disk.img
 
 testrunner: build/libatomic_asneeded.a
 	$(MAKE) -C user/testrunner
@@ -439,7 +441,7 @@ test-iso: $(TARGET) test-initrd $(LIMINE_DIR)/limine
 	mkdir -p iso_root/EFI/BOOT
 	cp $(TARGET)                    iso_root/boot/kernel.elf
 	cp $(TEST_INITRD)               iso_root/boot/initrd.cpio
-	cp limine.conf                  iso_root/boot/limine/limine.conf
+	cp limine-test.conf             iso_root/boot/limine/limine.conf
 	cp $(LIMINE_DIR)/limine-bios.sys    iso_root/boot/limine/
 	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/limine/
 	cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/limine/
@@ -459,7 +461,14 @@ test-iso: $(TARGET) test-initrd $(LIMINE_DIR)/limine
 	@echo ""
 	@echo "  Built: $(TEST_ISO)"
 
-test-run:
+test-disk: $(TEST_DISK_IMG)
+
+$(TEST_DISK_IMG):
+	dd if=/dev/zero of=$@ bs=1M count=16 status=none
+	mkfs.ext2 -b 4096 -L kyronix-test $@ 2>/dev/null
+	@echo "  Built: $@"
+
+test-run: $(TEST_DISK_IMG)
 	qemu-system-x86_64              \
 	    -M q35                      \
 	    -m 512M                     \
@@ -468,12 +477,12 @@ test-run:
 	    -serial stdio               \
 	    -netdev user,id=n0          \
 	    -device virtio-net-pci,netdev=n0 \
-	    -drive file=$(DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
+	    -drive file=$(TEST_DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
 	    -device ahci,id=ahci \
 	    -device ide-hd,drive=hd0,bus=ahci.0 \
 	    -no-reboot
 
-test-run-log:
+test-run-log: $(TEST_DISK_IMG)
 	@qemu-system-x86_64              \
 	    -M q35                      \
 	    -m 512M                     \
@@ -482,7 +491,7 @@ test-run-log:
 	    -display none               \
 	    -netdev user,id=n0          \
 	    -device virtio-net-pci,netdev=n0 \
-	    -drive file=$(DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
+	    -drive file=$(TEST_DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
 	    -device ahci,id=ahci \
 	    -device ide-hd,drive=hd0,bus=ahci.0 \
 	    -serial file:test.log       \
@@ -517,7 +526,7 @@ fmt-check: $(FMT_FILES)
 	clang-format --dry-run -Werror -style=file $?
 
 clean:
-	rm -f $(TARGET) $(ISO) $(LIVE_ISO) $(INITRD) $(TEST_ISO) $(TEST_INITRD) $(DISK_IMG)
+	rm -f $(TARGET) $(ISO) $(LIVE_ISO) $(INITRD) $(TEST_ISO) $(TEST_INITRD) $(DISK_IMG) $(TEST_DISK_IMG)
 	rm -f $(CONFIG_H) .config
 	rm -rf $(BUILD_DIR) iso_root rootfs/bin $(TEST_ROOTFS)
 	$(MAKE) -C user clean
