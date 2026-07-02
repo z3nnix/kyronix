@@ -68,7 +68,7 @@ out of the box (e.g tcc, nasm, vi, even a dillo web browser).
 
 ### Dependencies
 
-` gcc ; musl-tools ; qemu-system ; xorriso ; nasm
+` gcc ; musl-tools ; qemu-system ; xorriso ; nasm `
 
 ### Quick start
 
