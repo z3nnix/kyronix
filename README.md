@@ -86,8 +86,8 @@ make clean && make all && make run-serial
 
 | Target | Does |
 |--------|------|
-| `all` | Build kernel + initrd + disk image |
-| `iso` | Bootable ISO |
+| `all` | Build all |
+| `iso` | Build .iso |
 | `run` / `run-serial` / `run-uefi` | QEMU launch |
 | `test-run` / `test-run-log` | Run test suite in QEMU |
 | `user-build` | Build userspace programs |
