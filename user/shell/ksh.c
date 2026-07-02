@@ -27,6 +27,7 @@
 
 static void expand_env(char *buf, size_t size);
 static int split_line(char *line, char **argv);
+static int run_line_logic(char *input);
 
 #define SEG_FIRST 0
 #define SEG_AND 1
@@ -1271,7 +1272,7 @@ static int run_command(int argc, char **argv) {
 }
 
 static int split_logic(const char *in, seg_t *segs, int max) {
-    int n = 0, conn = SEG_FIRST, quote = 0;
+    int n = 0, conn = SEG_FIRST, quote = 0, paren_depth = 0;
     char buf[MAX_LINE];
     int bpos = 0;
     const char *p = in;
@@ -1315,16 +1316,22 @@ static int split_logic(const char *in, seg_t *segs, int max) {
             continue;
         }
 
+        if (c == '(') {
+            paren_depth++;
+        } else if (c == ')') {
+            if (paren_depth > 0) paren_depth--;
+        }
+
         int flush = 0, next_conn = SEG_FIRST;
-        if (c == '&' && p[1] == '&') {
+        if (paren_depth == 0 && c == '&' && p[1] == '&') {
             flush = 1;
             next_conn = SEG_AND;
             p += 2;
-        } else if (c == '|' && p[1] == '|') {
+        } else if (paren_depth == 0 && c == '|' && p[1] == '|') {
             flush = 1;
             next_conn = SEG_OR;
             p += 2;
-        } else if (c == ';') {
+        } else if (paren_depth == 0 && c == ';') {
             flush = 1;
             next_conn = SEG_SEQ;
             p++;
@@ -1352,6 +1359,53 @@ static int split_logic(const char *in, seg_t *segs, int max) {
     return n;
 }
 
+static int subshell_extract(const char *seg, char *inner, size_t inner_size) {
+    size_t len = strlen(seg);
+    if (len < 2 || seg[0] != '(' || seg[len - 1] != ')') return 0;
+
+    int depth = 0, quote = 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = seg[i];
+        if (quote) {
+            if (c == (char) quote) quote = 0;
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (c == '(') {
+            depth++;
+        } else if (c == ')') {
+            depth--;
+            if (depth == 0 && i != len - 1) return 0;
+        }
+    }
+    if (depth != 0) return 0; /* unbalanced */
+
+    size_t n = len - 2;
+    if (n >= inner_size) n = inner_size - 1;
+    memcpy(inner, seg + 1, n);
+    inner[n] = '\0';
+    return 1;
+}
+
+static int run_subshell(const char *inner) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+    if (pid == 0) {
+        char copy[MAX_LINE];
+        snprintf(copy, sizeof(copy), "%s", inner);
+        _exit(run_line_logic(copy) & 0xFF);
+    }
+    int wstatus = 0;
+    waitpid(pid, &wstatus, 0);
+    return WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 1;
+}
+
 static int run_line_logic(char *input) {
     seg_t segs[32];
     int n = split_logic(input, segs, 32);
@@ -1362,6 +1416,13 @@ static int run_line_logic(char *input) {
         char copy[MAX_LINE];
         strncpy(copy, segs[i].seg, MAX_LINE - 1);
         copy[MAX_LINE - 1] = '\0';
+
+        char inner[MAX_LINE];
+        if (subshell_extract(copy, inner, sizeof(inner))) {
+            status = run_subshell(inner);
+            continue;
+        }
+
         char *cmd_argv[MAX_ARGS];
         expand_env(copy, sizeof(copy));
         int argc = split_line(copy, cmd_argv);
