@@ -201,6 +201,13 @@ void isr_dispatch(cpu_state_t *state) {
                 if (pf == PF_HANDLED) return;
                 sig = (pf == PF_SIGBUS) ? SIGBUS : SIGSEGV;
             }
+
+            if ((n == 1 || n == 3) && g_current_proc->tracer_pid) {
+                if (n == 3 && state->rip) state->rip--; /* int3 leaves rip past the opcode */
+                proc_ptrace_stop(g_current_proc, SIGTRAP, 2, state, &state->rflags);
+                return;
+            }
+
             kdbg("\n[exc#%lu pid=%u RIP=%lx] -> sig %d\n", n, g_current_proc->pid, state->rip, sig);
             if (n == 14) {
                 uint64_t cr2 = read_cr2();

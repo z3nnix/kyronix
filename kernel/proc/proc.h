@@ -63,6 +63,17 @@ typedef struct proc {
     uint64_t pages_freed; /* pages freed via munmap/shrink brk */
     uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
     uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
+
+    /* ptrace(2) state, appended so the offsets asserted in proc.c/sched.S never move */
+    uint32_t tracer_pid;        /* 0 = not traced */
+    uint8_t ptrace_stopped;     /* currently in ptrace-stop, waiting for tracer */
+    uint8_t ptrace_reported;    /* this stop was already handed back via wait4 */
+    uint8_t ptrace_stop_sig;    /* signal reported to the tracer for this stop */
+    uint8_t ptrace_syscall_trace; /* PTRACE_SYSCALL: stop at syscall enter/exit */
+    uint8_t ptrace_in_syscall;   /* toggles enter/exit for PTRACE_SYSCALL */
+    uint8_t ptrace_step;         /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
+    uint8_t ptrace_frame_kind;   /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
+    void *ptrace_frame;          /* frame the tracee is stopped in, valid while stopped */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
@@ -72,6 +83,7 @@ void proc_init(void);
 proc_t *proc_alloc(uint32_t ppid);
 void proc_kstack_free(proc_t *p);
 void proc_defer_thread_reap(proc_t *p);
+void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t *rflags_slot);
 void proc_reap_pending(void); /* free a deferred kstack - call only when not on it */
 proc_t *proc_find(uint32_t pid);
 proc_t *proc_next_ready(proc_t *skip);

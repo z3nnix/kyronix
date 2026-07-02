@@ -178,3 +178,48 @@ void sched_yield_blocking(void) {
     g_current_space = p->space;
     cpu_set_kernel_stack(p->kstack_top);
 }
+
+void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t *rflags_slot) {
+    p->ptrace_stop_sig = (uint8_t) sig;
+    p->ptrace_frame_kind = (uint8_t) frame_kind;
+    p->ptrace_frame = frame;
+    p->ptrace_stopped = 1;
+    p->state = PROC_WAITING;
+
+    proc_t *tracer = proc_find(p->tracer_pid);
+    if (tracer && tracer->state != PROC_UNUSED) {
+        proc_send_signal(tracer, SIGCHLD);
+        if (tracer->state == PROC_WAITING) tracer->state = PROC_READY;
+    }
+
+    while (p->ptrace_stopped) {
+        proc_t *next = proc_next_ready(p);
+        if (!next) {
+            sti();
+            hlt();
+            cli();
+            continue;
+        }
+        next->state = PROC_RUNNING;
+        vfs_set_fdtable(next->fds);
+        g_current_space = next->space;
+        cpu_set_kernel_stack(next->kstack_top);
+        sched_switch(next);
+    }
+
+    if (rflags_slot) {
+        if (p->ptrace_step) {
+            *rflags_slot |= 0x100ULL;
+        } else {
+            *rflags_slot &= ~0x100ULL;
+        }
+    }
+    p->ptrace_step = 0;
+    p->ptrace_frame_kind = 0;
+    p->ptrace_frame = NULL;
+
+    p->state = PROC_RUNNING;
+    vfs_set_fdtable(p->fds);
+    g_current_space = p->space;
+    cpu_set_kernel_stack(p->kstack_top);
+}

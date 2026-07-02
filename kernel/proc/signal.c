@@ -123,5 +123,10 @@ void signal_check(syscall_frame_t *f) {
 
     p->pending_sigs &= ~(1ULL << idx);
 
+    if (p->tracer_pid && sig != SIGKILL) {
+        proc_ptrace_stop(p, sig, 1, f, &f->r11);
+        return;
+    }
+
     deliver_signal(p, sig, f);
 }
