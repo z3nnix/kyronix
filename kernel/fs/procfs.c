@@ -241,6 +241,12 @@ static int64_t proc_ostype_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t
     return read_buf(buf, len, off, s, sizeof(s) - 1);
 }
 
+static int64_t proc_pid_max_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    static const char s[] = "32768\n";
+    return read_buf(buf, len, off, s, sizeof(s) - 1);
+}
+
 static int64_t proc_osrelease_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
     static const char s[] = "0.0.1\n";
@@ -557,6 +563,7 @@ void procfs_init(void) {
     vfs_create_chr("/proc/sys/kernel/ostype", proc_ostype_read, NULL);
     vfs_create_chr("/proc/sys/kernel/osrelease", proc_osrelease_read, NULL);
     vfs_create_chr("/proc/sys/kernel/hostname", proc_hostname_read, NULL);
+    vfs_create_chr("/proc/sys/kernel/pid_max", proc_pid_max_read, NULL);
 
     vfs_create_chr("/proc/self/exe", proc_self_exe_read, NULL);
     vfs_create_chr("/proc/self/cmdline", proc_self_cmdline_read, NULL);
