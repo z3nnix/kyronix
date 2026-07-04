@@ -198,7 +198,7 @@ $(KCONF) $(NCONF): $(wildcard scripts/kconfig/*.c scripts/kconfig/*.h scripts/kc
 	$(MAKE) -s -C $(@D)
 
 # Generate kernel/config.h from kernel/Kconfig via kconfig tools
-$(CONFIG_H): kernel/Kconfig $(KCONF) .config
+$(CONFIG_H): kernel/Kconfig $(KCONF) $(wildcard .config)
 	@KCONFIG_AUTOHEADER=$@ $(KCONF) --syncconfig kernel/Kconfig < /dev/null 2>/dev/null
 	@touch $@
 
