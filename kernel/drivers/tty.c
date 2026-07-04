@@ -111,10 +111,12 @@ static void tty_input_char(uint8_t c) {
 
 void tty_process_input(void) {
     uint64_t flags = irq_save();
+#ifdef CONFIG_SERIAL_CONSOLE
     if (serial_data_ready(COM1)) {
         uint8_t c = serial_getchar(COM1);
         tty_input_char(c);
     }
+#endif
 
     if (kbd_data_ready()) {
         int c = kbd_getchar(); /* always drain ps/2 buffer; evdev hook fires inside */
@@ -179,26 +181,38 @@ int64_t tty_write(const char *buf, uint64_t len) {
 
         /* ONLCR: map \n -> \r\n on output */
         if ((tty_termios.c_oflag & ONLCR) && c == '\n') {
+#ifdef CONFIG_SERIAL_CONSOLE
             serial_putchar(COM1, '\r');
+#endif
             if (g_fb.addr) fb_putchar('\r');
         }
 
+#ifdef CONFIG_SERIAL_CONSOLE
         serial_putchar(COM1, c);
+#endif
         if (g_fb.addr) fb_putchar(c);
     }
     return (int64_t) len;
 }
 
 bool tty_data_ready(void) {
+#ifdef CONFIG_SERIAL_CONSOLE
     return !tty_buf_empty() || serial_data_ready(COM1) || kbd_data_ready();
+#else
+    return !tty_buf_empty() || kbd_data_ready();
+#endif
 }
 
 void tty_putchar(char c) {
     if ((tty_termios.c_oflag & ONLCR) && c == '\n') {
+#ifdef CONFIG_SERIAL_CONSOLE
         serial_putchar(COM1, '\r');
+#endif
         if (g_fb.addr) fb_putchar('\r');
     }
+#ifdef CONFIG_SERIAL_CONSOLE
     serial_putchar(COM1, c);
+#endif
     if (g_fb.addr) fb_putchar(c);
 }
 

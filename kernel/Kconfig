@@ -13,6 +13,14 @@ config KMEMLEAK
 	  Scans data/bss, heap, page tables, and kernel stacks to
 	  detect unreferenced objects.
 
+config SERIAL_CONSOLE
+	bool "Serial console (COM1) for TTY I/O"
+	default y
+	help
+	  When enabled, TTY input/output is routed through the COM1 serial
+	  port (UART 16550 at 0x3F8). Disable this if you only want TTY
+	  interaction via framebuffer console + PS/2 keyboard.
+
 config LOG_LEVEL
 	int "Default kernel log level (0-3)"
 	range 0 3

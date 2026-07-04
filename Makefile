@@ -23,6 +23,7 @@ CONFIG_H := kernel/config.h
 $(shell if ! [ -f $(CONFIG_H) ]; then \
 	echo '/* Auto-generated */' > $(CONFIG_H); \
 	echo '#define CONFIG_KMEMLEAK 1' >> $(CONFIG_H); \
+	echo '#define CONFIG_SERIAL_CONSOLE 1' >> $(CONFIG_H); \
 	echo '#define CONFIG_LOG_LEVEL 1' >> $(CONFIG_H); \
 fi)
 
@@ -197,7 +198,7 @@ $(KCONF) $(NCONF): $(wildcard scripts/kconfig/*.c scripts/kconfig/*.h scripts/kc
 	$(MAKE) -s -C $(@D)
 
 # Generate kernel/config.h from kernel/Kconfig via kconfig tools
-$(CONFIG_H): kernel/Kconfig $(KCONF)
+$(CONFIG_H): kernel/Kconfig $(KCONF) .config
 	@KCONFIG_AUTOHEADER=$@ $(KCONF) --syncconfig kernel/Kconfig < /dev/null 2>/dev/null
 	@touch $@
 
