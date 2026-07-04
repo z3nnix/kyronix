@@ -6,6 +6,8 @@
 #define GDT_KERNEL_DATA 0x10
 #define GDT_USER_DATA 0x18
 #define GDT_USER_CODE 0x20
+#define GDT_USER_DATA_SEL (GDT_USER_DATA | 0x3)
+#define GDT_USER_CODE_SEL (GDT_USER_CODE | 0x3)
 #define GDT_TSS 0x28 /* 16 byte tss descriptor occupies 0x28–0x2F */
 
 void gdt_init(void);
