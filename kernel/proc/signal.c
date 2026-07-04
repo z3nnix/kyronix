@@ -1,4 +1,5 @@
 #include "signal.h"
+#include "arch/x86_64/gdt.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "drivers/tty.h"
 #include "lib/log.h"
@@ -69,7 +70,7 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     mc->rsp = user_rsp;
     mc->rip = f->rcx;
     mc->eflags = f->r11;
-    mc->cs = 0x20;
+    mc->cs = GDT_USER_CODE_SEL;
     mc->fpstate = 0;
 
     frame->uc.uc_sigmask = p->sig_mask;

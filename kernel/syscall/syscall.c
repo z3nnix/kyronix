@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "version.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/gdt.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "crypto/chacha20.h"
@@ -892,8 +893,8 @@ struct ptrace_user_regs {
 
 static void ptrace_fill_regs(proc_t *t, struct ptrace_user_regs *out) {
     memset(out, 0, sizeof(*out));
-    out->cs = 0x23;
-    out->ss = out->ds = out->es = out->fs = out->gs = 0x1B;
+    out->cs = GDT_USER_CODE_SEL;
+    out->ss = out->ds = out->es = out->fs = out->gs = GDT_USER_DATA_SEL;
     out->fs_base = t->fs_base;
     out->rsp = t->user_rsp;
 

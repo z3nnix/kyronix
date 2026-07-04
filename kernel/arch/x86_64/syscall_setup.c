@@ -33,8 +33,7 @@ void syscall_init(void) {
     cpu_enable_sse();
 
     wrmsr(MSR_EFER, rdmsr(MSR_EFER) | 1ULL);
-    /* STAR[47:32]=0x0008 -> SYSCALL CS=0x08; STAR[63:48]=0x0010 -> SYSRETQ CS=0x20 SS=0x18 */
-    wrmsr(MSR_STAR, (0x0010ULL << 48) | (0x0008ULL << 32));
+    wrmsr(MSR_STAR, ((uint64_t) (GDT_USER_DATA_SEL - 0x8) << 48) | ((uint64_t) GDT_KERNEL_CODE << 32));
     wrmsr(MSR_LSTAR, (uint64_t) syscall_entry);
     /* clear IF/TF/DF/AC on SYSCALL entry */
     wrmsr(MSR_SFMASK, (1ULL << 9) | (1ULL << 8) | (1ULL << 10) | (1ULL << 18));
