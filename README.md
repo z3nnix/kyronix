@@ -88,7 +88,7 @@ make clean && make all && make run-serial
 |--------|------|
 | `all` | Build all |
 | `iso` | Build .iso |
-| `run` / `run-serial` / `run-uefi` | Qemu launch |
+| `run` / `run-serial` | Qemu launch |
 | `test-run` / `test-run-log` | Run tests in qemu |
 | `user-build` | Build userspace |
 | `fmt` / `fmt-check` | Refactor code |
@@ -101,7 +101,7 @@ make clean && make all && make run-serial
 | `kernel/` | Core kernel |
 | `user/` | Userspace |
 | `rootfs/` | Initramfs |
-| `limine/` | Limine Bl |
+| `limine/` | Limine BL |
 | `meta/` | Screenshots |
 
 ## License
