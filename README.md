@@ -9,7 +9,7 @@
 
 Kyronix is ​​a modern hybrid Linux-compatible OS with a focus on maximum speed and security.
 
-<img src="meta/screenshots/preview.jpg" alt="Kyronix preview" width="640">
+<img src="meta/screenshots/preview.png" alt="Kyronix preview" width="640">
 
 ## Features
 
