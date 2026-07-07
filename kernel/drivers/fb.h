@@ -16,6 +16,9 @@
 #define COLOR_GRAY RGB(160, 160, 160)  // #A0A0A0
 #define COLOR_BG RGB(0, 0, 0)          // #000000
 
+#define FONT_W 8
+#define FONT_H 16
+
 typedef struct {
     void *addr;
     uint64_t phys_addr;

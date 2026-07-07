@@ -140,8 +140,8 @@ static int64_t vt_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         winsize_t *ws = (winsize_t *) (uintptr_t) arg;
         if (!ws) return -22;
         if (!uptr_ok_w(ws, sizeof(*ws))) return -14;
-        ws->ws_row = 25;
-        ws->ws_col = 80;
+        ws->ws_row = (unsigned short) (g_fb.height / FONT_H);
+        ws->ws_col = (unsigned short) (g_fb.width / FONT_W);
         ws->ws_xpixel = (unsigned short) g_fb.width;
         ws->ws_ypixel = (unsigned short) g_fb.height;
         return 0;

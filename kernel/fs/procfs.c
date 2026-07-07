@@ -22,10 +22,10 @@
 #define ENOMEM 12
 
 static int64_t read_buf(char *out, uint64_t len, uint64_t off, const char *src, uint64_t sz) {
-    if (!uptr_ok_w(out, len)) return -(int64_t) EFAULT;
     if (off >= sz) return 0;
     uint64_t r = sz - off;
     if (r > len) r = len;
+    if (!uptr_ok_w(out, r)) return -(int64_t) EFAULT;
     memcpy(out, src + off, r);
     return (int64_t) r;
 }
@@ -222,7 +222,7 @@ static int64_t proc_meminfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     uint64_t total = pmm_usable_pages() * (PAGE_SIZE / 1024);
     uint64_t free = pmm_free_pages() * (PAGE_SIZE / 1024);
     uint64_t used = total > free ? total - free : 0;
-    char tmp[512];
+    char tmp[1024];
     int sz = snprintf(tmp, sizeof(tmp),
                       "MemTotal:       %lu kB\n"
                       "MemFree:        %lu kB\n"
@@ -232,8 +232,23 @@ static int64_t proc_meminfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
                       "SwapCached:     0 kB\n"
                       "Active:         %lu kB\n"
                       "Inactive:       0 kB\n"
+                      "Active(anon):   0 kB\n"
+                      "Inactive(anon): 0 kB\n"
+                      "Active(file):   0 kB\n"
+                      "Inactive(file): 0 kB\n"
+                      "Unevictable:    0 kB\n"
+                      "Mlocked:        0 kB\n"
                       "SwapTotal:      0 kB\n"
-                      "SwapFree:       0 kB\n",
+                      "SwapFree:       0 kB\n"
+                      "Dirty:          0 kB\n"
+                      "Writeback:      0 kB\n"
+                      "AnonPages:      0 kB\n"
+                      "Mapped:         0 kB\n"
+                      "Shmem:          0 kB\n"
+                      "KReclaimable:   0 kB\n"
+                      "Slab:           0 kB\n"
+                      "SReclaimable:   0 kB\n"
+                      "SUnreclaim:     0 kB\n",
                       total, free, free, used);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
