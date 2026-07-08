@@ -2,7 +2,7 @@
 
 <img align="left" src="meta/logo.png" width="120" alt="Kyronix logo">
 
-> Operating system that sucks less.
+ Operating system that sucks less.
 
 ![Commits per month](https://img.shields.io/github/commit-activity/m/kyronix-project/kyronix)
 [![test](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml/badge.svg)](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml)
