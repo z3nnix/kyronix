@@ -919,7 +919,7 @@ static void ptrace_fill_regs(proc_t *t, struct ptrace_user_regs *out) {
         out->rdx = f->rdx;
         out->rsi = f->rsi;
         out->rdi = f->rdi;
-        out->orig_rax = f->rax;
+        out->orig_rax = t->ptrace_orig_rax;
         out->rip = f->rcx;
         out->eflags = f->r11;
     } else if (t->ptrace_frame_kind == 2) {
@@ -939,7 +939,7 @@ static void ptrace_fill_regs(proc_t *t, struct ptrace_user_regs *out) {
         out->rdx = s->rdx;
         out->rsi = s->rsi;
         out->rdi = s->rdi;
-        out->orig_rax = s->rax;
+        out->orig_rax = t->ptrace_orig_rax;
         out->rip = s->rip;
         out->cs = s->cs;
         out->eflags = s->rflags;
@@ -2073,6 +2073,7 @@ void syscall_dispatch(syscall_frame_t *f) {
     uint64_t a4 = f->r10, a5 = f->r8, a6 = f->r9;
 
     proc_t *tp = cur();
+    if (tp) tp->ptrace_orig_rax = nr;
     if (tp && tp->ptrace_syscall_trace && nr != 101) {
         tp->ptrace_in_syscall = 1;
         proc_ptrace_stop(tp, SIGTRAP | 0x80, 1, f, &f->r11);

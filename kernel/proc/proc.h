@@ -64,7 +64,6 @@ typedef struct proc {
     uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
     uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
 
-    /* ptrace(2) state, appended so the offsets asserted in proc.c/sched.S never move */
     uint32_t tracer_pid;        /* 0 = not traced */
     uint8_t ptrace_stopped;     /* currently in ptrace-stop, waiting for tracer */
     uint8_t ptrace_reported;    /* this stop was already handed back via wait4 */
@@ -74,6 +73,8 @@ typedef struct proc {
     uint8_t ptrace_step;         /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
     uint8_t ptrace_frame_kind;   /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
     void *ptrace_frame;          /* frame the tracee is stopped in, valid while stopped */
+    uint64_t ptrace_orig_rax;    /* syscall nr as of entry; rax itself gets clobbered by the
+                                   * return value before an exit-stop can report it */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

@@ -204,6 +204,7 @@ void isr_dispatch(cpu_state_t *state) {
 
             if ((n == 1 || n == 3) && g_current_proc->tracer_pid) {
                 if (n == 3 && state->rip) state->rip--; /* int3 leaves rip past the opcode */
+                g_current_proc->ptrace_orig_rax = state->rax;
                 proc_ptrace_stop(g_current_proc, SIGTRAP, 2, state, &state->rflags);
                 return;
             }
