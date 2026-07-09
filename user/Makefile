@@ -19,8 +19,8 @@ all:
 	cp ../build/bin/make $(ROOTFS)/bin/
 	cp ../build/bin/pipes $(ROOTFS)/usr/bin/
 	ln -sf ksh $(ROOTFS)/bin/sh
-	for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
-	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
+	for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup patch ping printenv printf ps pwd readlink reboot rm rmdir \
 	    sed seq sleep sort sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes; do \
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
 	done
