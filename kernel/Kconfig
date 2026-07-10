@@ -24,9 +24,9 @@ config SERIAL_CONSOLE
 config LOG_LEVEL
 	int "Default kernel log level (0-3)"
 	range 0 3
-	default 1
+	default 2
 	help
 	  0=KLOG_ERROR   (only errors)
-	  1=KLOG_WARN    (errors + warnings, default)
-	  2=KLOG_INFO    (errors + warnings + info)
+	  1=KLOG_WARN    (errors + warnings)
+	  2=KLOG_INFO    (errors + warnings + info, default)
 	  3=KLOG_DEBUG   (all messages)

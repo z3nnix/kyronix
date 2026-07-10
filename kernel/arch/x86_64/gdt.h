@@ -8,7 +8,8 @@
 #define GDT_USER_CODE 0x20
 #define GDT_USER_DATA_SEL (GDT_USER_DATA | 0x3)
 #define GDT_USER_CODE_SEL (GDT_USER_CODE | 0x3)
-#define GDT_TSS 0x28 /* 16 byte tss descriptor occupies 0x28–0x2F */
+#define GDT_TSS 0x28
 
 void gdt_init(void);
+void gdt_ap_load(uint32_t cpu_id);
 void gdt_set_kernel_stack(uint64_t rsp0);

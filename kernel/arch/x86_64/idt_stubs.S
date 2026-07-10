@@ -5,8 +5,8 @@
 .macro isr_no_err num
 .global isr_stub_\num
 isr_stub_\num:
-    pushq   $0              /* dummy error code */
-    pushq   $\num           /* vector number    */
+    pushq   $0
+    pushq   $\num
     jmp     isr_common
 .endm
 
@@ -17,26 +17,26 @@ isr_stub_\num:
     jmp     isr_common
 .endm
 
-isr_no_err  0   /* #DE  Divide Error            */
-isr_no_err  1   /* #DB  Debug                   */
-isr_no_err  2   /* NMI                          */
-isr_no_err  3   /* #BP  Breakpoint              */
-isr_no_err  4   /* #OF  Overflow                */
-isr_no_err  5   /* #BR  Bound Range Exceeded    */
-isr_no_err  6   /* #UD  Invalid Opcode          */
-isr_no_err  7   /* #NM  Device Not Available    */
-isr_err     8   /* #DF  Double Fault  (err=0)   */
-isr_no_err  9   /* Coproc Segment Overrun (legacy) */
-isr_err    10   /* #TS  Invalid TSS             */
-isr_err    11   /* #NP  Segment Not Present     */
-isr_err    12   /* #SS  Stack Segment Fault     */
-isr_err    13   /* #GP  General Protection      */
-isr_err    14   /* #PF  Page Fault              */
-isr_no_err 15   /* (reserved)                   */
-isr_no_err 16   /* #MF  x87 FP Exception        */
-isr_err    17   /* #AC  Alignment Check         */
-isr_no_err 18   /* #MC  Machine Check           */
-isr_no_err 19   /* #XF  SIMD FP Exception       */
+isr_no_err  0
+isr_no_err  1
+isr_no_err  2
+isr_no_err  3
+isr_no_err  4
+isr_no_err  5
+isr_no_err  6
+isr_no_err  7
+isr_err     8
+isr_no_err  9
+isr_err    10
+isr_err    11
+isr_err    12
+isr_err    13
+isr_err    14
+isr_no_err 15
+isr_no_err 16
+isr_err    17
+isr_no_err 18
+isr_no_err 19
 isr_no_err 20
 isr_no_err 21
 isr_no_err 22
@@ -47,11 +47,11 @@ isr_no_err 26
 isr_no_err 27
 isr_no_err 28
 isr_no_err 29
-isr_err    30   /* #SX  Security Exception      */
+isr_err    30
 isr_no_err 31
 
-isr_no_err 32   /* IRQ0  pit timer              */
-isr_no_err 33   /* IRQ1  ps/2 keyboard          */
+isr_no_err 32
+isr_no_err 33
 isr_no_err 34
 isr_no_err 35
 isr_no_err 36
@@ -69,6 +69,9 @@ isr_no_err 47
 
 isr_no_err 128
 
+isr_no_err 224
+isr_no_err 255
+
 .section .rodata
 .global isr_stub_table
 isr_stub_table:
@@ -85,12 +88,12 @@ isr_stub_table:
     .quad isr_stub_36, isr_stub_37, isr_stub_38, isr_stub_39
     .quad isr_stub_40, isr_stub_41, isr_stub_42, isr_stub_43
     .quad isr_stub_44, isr_stub_45, isr_stub_46, isr_stub_47
-    /* int 0x80 at table index 48 */
     .quad isr_stub_128
+    .quad isr_stub_224
+    .quad isr_stub_255
 
 .section .text
 isr_common:
-    /* CS is at RSP+24 (after dummy+num, before iretq frame: RIP/CS/RFLAGS/RSP/SS) */
     testb   $3, 24(%rsp)
     jz      .Lno_swapgs_in
     swapgs
@@ -131,7 +134,6 @@ isr_common:
     popq    %rbx
     popq    %rax
 
-    /* same layout: CS still at RSP+24 */
     testb   $3, 24(%rsp)
     jz      .Lno_swapgs_out
     swapgs

@@ -1,12 +1,11 @@
 #pragma once
+#include "arch/x86_64/percpu.h"
 #include "mm/vmm.h"
 #include <stdbool.h>
 #include <stdint.h>
 #ifndef USER_LIMIT
 #define USER_LIMIT 0x800000000000ULL
 #endif
-
-extern vmm_space_t *g_current_space;
 
 static inline bool uptr_ok(const void *p, uint64_t len) {
     uint64_t base = (uint64_t) (uintptr_t) p;

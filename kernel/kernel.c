@@ -6,8 +6,10 @@
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
+#include "arch/x86_64/lapic.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
+#include "proc/smp.h"
 #include "boot/limine.h"
 #include "drivers/fb.h"
 
@@ -154,6 +156,9 @@ void kmain(void) {
     kstatus("Initialising PMM", true);
     vmm_init();
     kstatus("Initialising VMM", true);
+    lapic_init();
+    kstatus("Initialising APIC", true);
+    smp_init();
     {
         uint32_t eax = 7, ebx = 0, ecx = 0;
         __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx) : : "edx");
@@ -219,7 +224,17 @@ void kmain(void) {
     vt_init();
     kstatus("Initialising virtual tty", true);
     pit_init();
-    kstatus("Starting timer", true);
+    kstatus("Starting PIT timer", true);
+    lapic_calibrate_timer();
+
+    {
+        proc_t *bsp_idle = proc_create_idle(0, ap_sched_loop);
+        if (bsp_idle) {
+            g_cpu_local[0].idle = bsp_idle;
+            g_cpu_local[0].current = bsp_idle;
+        }
+    }
+    smp_boot_aps();
 
     {
         uint8_t seed[32];
@@ -415,6 +430,8 @@ void kmain(void) {
                 if (process_exec(buf, fsize, "/init") < 0) {
                     kprintf("  FATAL: process_exec failed\n");
                     kfree(buf);
+                } else {
+                    __atomic_store_n(&g_kernel_ready, 1, __ATOMIC_RELEASE);
                 }
             } else {
                 kprintf("  FATAL: out of memory for /init\n");

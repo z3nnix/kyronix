@@ -26,6 +26,7 @@
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
+#include "proc/smp.h"
 #include "socket.h"
 #include "time.h"
 
@@ -60,8 +61,6 @@
 #define ENOTCONN 107
 #define EISCONN 106
 #define EPROTONOSUPPORT 93
-
-vmm_space_t *g_current_space = NULL;
 
 static void cleartid_wake(uint32_t *addr);
 
@@ -409,7 +408,7 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
     child->kstack_rsp = (uint64_t) ksp;
     child->state = PROC_READY;
 
-    log_info("[fork] parent=%u child=%u", parent->pid, child->pid);
+
     return (int64_t) child->pid;
 
 fail_fork:
@@ -776,7 +775,7 @@ static int64_t sys_execve(const char *path, const char **uargv, const char **uen
     vmm_switch(p->space);
     vmm_space_free(old);
 
-    vfs_cloexec_flush(); /* close FD_CLOEXEC fds now that exec has commtted */
+    vfs_cloexec_flush();
 
     for (int i = 0; i < NSIG; i++) {
         if (p->sig_actions[i].sa_handler != SIG_IGN) {
@@ -858,20 +857,40 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
     proc_t *parent = proc_find(p->ppid);
     if (parent && parent->state != PROC_UNUSED) {
         proc_send_signal(parent, SIGCHLD);
-        if (parent->state != PROC_RUNNING) {
-            parent->state = PROC_READY;
-            vfs_set_fdtable(parent->fds);
-            g_current_space = parent->space;
-            cpu_set_kernel_stack(parent->kstack_top);
-            sched_switch(parent);
-        }
     }
-    proc_t *any = proc_idle_until_ready(p);
-    any->state = PROC_RUNNING;
-    vfs_set_fdtable(any->fds);
-    g_current_space = any->space;
-    cpu_set_kernel_stack(any->kstack_top);
-    sched_switch(any);
+
+    /* Switch to this CPU's idle process, which will continue in ap_sched_loop.
+       We never sched_switch to the parent because its context may be live
+       on another CPU (never saved via sched_switch). */
+    uint32_t cpu_id = this_cpu_id();
+    proc_t *idle = (proc_t *) g_cpu_local[cpu_id].idle;
+    if (idle && idle->state == PROC_READY) {
+        idle->state = PROC_RUNNING;
+        vfs_set_fdtable(idle->fds);
+        g_current_space = idle->space;
+        cpu_set_kernel_stack(idle->kstack_top);
+        bkl_unlock();
+        sched_switch(idle);
+        /* unreachable */
+    }
+
+    /* Fallback: find any READY process that isn't us or the parent */
+    for (;;) {
+        for (int i = 0; i < PROC_MAX; i++) {
+            proc_t *c = &g_proctable[i];
+            if (c == p || c == parent) continue;
+            if (c->state == PROC_READY && c->pid != 0) {
+                c->state = PROC_RUNNING;
+                vfs_set_fdtable(c->fds);
+                g_current_space = c->space;
+                cpu_set_kernel_stack(c->kstack_top);
+                sched_switch(c);
+            }
+        }
+        sti();
+        hlt();
+        cli();
+    }
     cpu_halt(); /* unreachable */
 }
 
@@ -1139,27 +1158,7 @@ static int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
         if (options & 1) /* WNOHANG */
             return 0;
 
-        parent->state = PROC_WAITING;
-        proc_t *next = proc_next_ready(parent);
-        if (!next) {
-            sti();
-            hlt();
-            cli();
-            parent->state = PROC_RUNNING;
-            continue;
-        }
-
-        next->state = PROC_RUNNING;
-        vfs_set_fdtable(next->fds);
-        g_current_space = next->space;
-        cpu_set_kernel_stack(next->kstack_top);
-        /* IF=0 across the switch: keep current-proc/space updates atomic. */
-        sched_switch(next);
-
-        parent->state = PROC_RUNNING;
-        vfs_set_fdtable(parent->fds);
-        g_current_space = parent->space;
-        cpu_set_kernel_stack(parent->kstack_top);
+        sched_yield_blocking();
     }
 }
 
@@ -2170,10 +2169,28 @@ void syscall_dispatch(syscall_frame_t *f) {
         }
         ret = fd_pipe((int *) a1);
         break;
-    case 24:
-        sched_yield_blocking();
+    case 24: {
+        proc_t *p = cur();
+        spin_lock(&g_sched_lock);
+        proc_t *next = proc_next_ready(p);
+        if (next) {
+            p->state = PROC_READY;
+            next->state = PROC_RUNNING;
+        }
+        spin_unlock(&g_sched_lock);
+        if (next) {
+            vfs_set_fdtable(next->fds);
+            g_current_space = next->space;
+            cpu_set_kernel_stack(next->kstack_top);
+            sched_switch(next);
+            p->state = PROC_RUNNING;
+            vfs_set_fdtable(p->fds);
+            g_current_space = p->space;
+            cpu_set_kernel_stack(p->kstack_top);
+        }
         ret = 0;
         break;
+    }
     case 53:
         if (!a4 || !uptr_ok_w((void *) a4, 2 * sizeof(int))) {
             ret = -(int64_t) EFAULT;
@@ -2735,11 +2752,12 @@ void syscall_dispatch(syscall_frame_t *f) {
                 break;
             }
             memset((void *) a3, 0, sz);
-            *(uint8_t *) a3 = 1;
+            for (uint32_t i = 0; i < g_cpu_count && i < sz * 8; i++)
+                ((uint8_t *) a3)[i / 8] |= (uint8_t) (1 << (i % 8));
         }
         ret = 0;
         break;
-    } /* sched_getaffinity: 1 CPU */
+    } /* sched_getaffinity */
     case 213:
         ret = sys_epoll_create1(0);
         break; /* epoll_create */

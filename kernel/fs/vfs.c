@@ -21,7 +21,10 @@ static uint32_t g_next_ino = 1;
 char g_cwd[512] = "/";
 
 static vfs_file_t *g_default_fds[VFS_FD_MAX];
-static vfs_file_t **g_fds = g_default_fds;
+
+static inline vfs_file_t **vfs_cur_fds(void) {
+    return g_cur_fds ? g_cur_fds : g_default_fds;
+}
 
 #define FS_MAX 8
 static struct filesystem *g_filesystems[FS_MAX];
@@ -656,8 +659,9 @@ int vfs_rename(const char *oldpath, const char *newpath) {
 }
 
 static int fd_alloc_from(int start) {
+    vfs_file_t **fds = vfs_cur_fds();
     for (int i = start; i < VFS_FD_MAX; i++)
-        if (!g_fds[i]) return i;
+        if (!fds[i]) return i;
     return -1;
 }
 
@@ -675,7 +679,7 @@ static bool file_valid(vfs_file_t *f) {
 
 static vfs_file_t *fd_get(int fd) {
     if (fd < 0 || fd >= VFS_FD_MAX) return NULL;
-    vfs_file_t *f = g_fds[fd];
+    vfs_file_t *f = vfs_cur_fds()[fd];
     if (!file_valid(f)) return NULL;
     return f;
 }
@@ -687,11 +691,11 @@ vfs_file_t *vfs_file_alloc(void) { return file_alloc(); }
 vfs_file_t *vfs_fd_get(int fd) { return fd_get(fd); }
 
 void vfs_fd_install(int fd, vfs_file_t *f) {
-    if (fd >= 0 && fd < VFS_FD_MAX) g_fds[fd] = f;
+    if (fd >= 0 && fd < VFS_FD_MAX) vfs_cur_fds()[fd] = f;
 }
 
 void vfs_fd_clear(int fd) {
-    if (fd >= 0 && fd < VFS_FD_MAX) g_fds[fd] = NULL;
+    if (fd >= 0 && fd < VFS_FD_MAX) vfs_cur_fds()[fd] = NULL;
 }
 
 bool fd_valid(int fd) { return fd_get(fd) != NULL; }
@@ -708,12 +712,11 @@ int fd_open_node(vfs_node_t *n, int flags) {
     int fd = fd_alloc_from(0);
     if (fd < 0) return -(int) EMFILE;
     vfs_file_t *f = file_alloc();
-    // ok fixed
     if (!f) return -(int) ENOMEM;
     f->node = n;
     f->flags = flags;
     node_ref(n);
-    g_fds[fd] = f;
+    vfs_cur_fds()[fd] = f;
     return fd;
 }
 
@@ -762,7 +765,6 @@ int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off) {
     return (int64_t) len;
 }
 
-/* like fd_pwrite but buf is a kernel pointer, so skip the user-pointer check */
 int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
@@ -914,9 +916,8 @@ static void file_addref(vfs_file_t *f) {
 
 void vfs_file_addref(vfs_file_t *f) { file_addref(f); }
 
-void vfs_set_fdtable(vfs_file_t **fds) { g_fds = fds; }
-
-vfs_file_t **vfs_get_fdtable(void) { return g_fds; }
+void vfs_set_fdtable(vfs_file_t **fds) { if (fds) g_cur_fds = fds; }
+vfs_file_t **vfs_get_fdtable(void) { return vfs_cur_fds(); }
 
 static void wire_stdio(vfs_file_t **fds) {
     static const char *paths[] = { "/dev/stdin", "/dev/stdout", "/dev/stderr" };
@@ -971,8 +972,9 @@ void vfs_free_fdtable(vfs_file_t **fds) {
 
 /* close every FD_CLOEXEC fd in the current table; called on a successful execve */
 void vfs_cloexec_flush(void) {
+    vfs_file_t **fds = vfs_cur_fds();
     for (int i = 0; i < VFS_FD_MAX; i++)
-        if (g_fds[i] && file_valid(g_fds[i]) && g_fds[i]->cloexec) fd_close(i);
+        if (fds[i] && file_valid(fds[i]) && fds[i]->cloexec) fd_close(i);
 }
 
 int vfs_register_fs(struct filesystem *fs) {
@@ -1150,7 +1152,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot) {
     if ((flags & O_TRUNC) && n->type == VFS_TYPE_REG) n->size = 0;
     if (flags & O_APPEND) f->pos = n->size;
 
-    g_fds[fd] = f;
+    vfs_cur_fds()[fd] = f;
     return fd;
 }
 
@@ -1173,7 +1175,7 @@ int fd_close(int fd) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int) EBADF;
     file_close(f);
-    g_fds[fd] = NULL;
+    vfs_cur_fds()[fd] = NULL;
     return 0;
 }
 
@@ -1232,7 +1234,7 @@ int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (len == 0) return 0;
-    if (!uptr_ok_w(buf, len)) // too
+    if (!uptr_ok_w(buf, len))
         return -(int64_t) EFAULT;
 
     if (f->wpipe) {
@@ -1319,7 +1321,6 @@ int64_t fd_write(int fd, const void *buf, uint64_t len) {
     return fd_write_dispatch(f, buf, len);
 }
 
-/* skips user-pointwr check */
 int64_t fd_write_kbuf(int fd, const void *buf, uint64_t len) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
@@ -1514,7 +1515,6 @@ int fd_readlink(const char *path, char *buf, uint64_t bufsz) {
     return (int) len;
 }
 
-/* reconstruct absolute path of node by walking parent pointers. */
 char *vfs_node_abspath(vfs_node_t *n, char *buf, size_t sz) {
     if (!n || !buf || sz == 0) return NULL;
     if (n->parent == n) { /* root */

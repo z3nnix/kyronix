@@ -6,6 +6,7 @@
 #include "mm/heap.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "proc/smp.h"
 #include "syscall/syscall.h"
 
 _Static_assert(__builtin_offsetof(proc_t, space) == 16, "sched.S PROC_SPACE");
@@ -21,7 +22,6 @@ _Static_assert(__builtin_offsetof(proc_t, fpu_state) == 3312, "sched.S PROC_FPU_
 static uint64_t g_kstack_va_bump = KSTACK_VA_BASE;
 
 proc_t g_proctable[PROC_MAX];
-proc_t *g_current_proc = NULL;
 
 void proc_init(void) {
     memset(g_proctable, 0, sizeof(g_proctable));
@@ -103,7 +103,6 @@ proc_t *proc_alloc(uint32_t ppid) {
     }
     return NULL;
 }
-static proc_t *g_reap_thread;
 
 void proc_reap_pending(void) {
     proc_t *p = g_reap_thread;
@@ -138,13 +137,22 @@ proc_t *proc_find(uint32_t pid) {
 }
 
 proc_t *proc_next_ready(proc_t *skip) {
-    for (int i = 0; i < PROC_MAX; i++) {
+    /* Round-robin: start scanning from the slot after the last-scheduled one
+     * to give all processes a fair chance. */
+    static uint32_t g_last_scheduled[MAX_CPUS] = {0};
+    uint32_t cpu = this_cpu_id();
+    int start = ((int) g_last_scheduled[cpu] + 1) % PROC_MAX;
+    for (int j = 0; j < PROC_MAX; j++) {
+        int i = (start + j) % PROC_MAX;
         if (&g_proctable[i] == skip) continue;
-        if (g_proctable[i].state == PROC_READY) return &g_proctable[i];
+        if (g_proctable[i].state == PROC_READY && g_proctable[i].pid != 0) {
+            g_last_scheduled[cpu] = (uint32_t) i;
+            return &g_proctable[i];
+        }
     }
     return NULL;
 }
-// WTF IM G
+
 proc_t *proc_idle_until_ready(proc_t *skip) {
     for (;;) {
         proc_t *nt = proc_next_ready(skip);
@@ -157,26 +165,107 @@ proc_t *proc_idle_until_ready(proc_t *skip) {
 
 void sched_yield_blocking(void) {
     proc_t *p = g_current_proc;
-    proc_t *next = proc_next_ready(p);
-    if (!next) {
+
+    for (;;) {
+        p->state = PROC_WAITING;
+
+        spin_lock(&g_sched_lock);
+        proc_t *next = proc_next_ready(p);
+        if (!next) {
+            uint32_t cpu_id = this_cpu_id();
+            next = (proc_t *) g_cpu_local[cpu_id].idle;
+            if (!next || next->state == PROC_UNUSED) {
+                next = NULL;
+            } else {
+                next->state = PROC_RUNNING;
+            }
+        } else {
+            next->state = PROC_RUNNING;
+        }
+        spin_unlock(&g_sched_lock);
+
+        if (next) {
+            vfs_set_fdtable(next->fds);
+            g_current_space = next->space;
+            cpu_set_kernel_stack(next->kstack_top);
+            bkl_unlock();
+            sched_switch(next);
+            bkl_lock();
+
+            p->state = PROC_RUNNING;
+            vfs_set_fdtable(p->fds);
+            g_current_space = p->space;
+            cpu_set_kernel_stack(p->kstack_top);
+            return;
+        }
+
         sti();
-        hlt();
+        cpu_relax();
         cli();
-        return;
+
+        if (p->state == PROC_READY) {
+            p->state = PROC_RUNNING;
+            return;
+        }
     }
+}
 
-    p->state = PROC_WAITING;
-    next->state = PROC_RUNNING;
-    vfs_set_fdtable(next->fds);
-    g_current_space = next->space;
-    cpu_set_kernel_stack(next->kstack_top);
+proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {
+    for (int i = 0; i < PROC_MAX; i++) {
+        if (g_proctable[i].state != PROC_UNUSED) continue;
+        proc_t *p = &g_proctable[i];
+        memset(p, 0, sizeof(*p));
 
-    sched_switch(next);
+        p->state = PROC_READY;
+        p->pid = 0;
+        p->ppid = 0;
+        p->space = &g_kernel_space;
+        p->fds = NULL;
 
-    p->state = PROC_RUNNING;
-    vfs_set_fdtable(p->fds);
-    g_current_space = p->space;
-    cpu_set_kernel_stack(p->kstack_top);
+        uint64_t guard_va = g_kstack_va_bump;
+        g_kstack_va_bump += KSTACK_VA_STRIDE;
+        for (int pg = 0; pg < KSTACK_PAGES; pg++) {
+            void *phys = pmm_alloc_zeroed();
+            if (!phys) {
+                for (int j = 0; j < pg; j++) {
+                    uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
+                    vmm_unmap(&g_kernel_space, va);
+                }
+                p->state = PROC_UNUSED;
+                return NULL;
+            }
+            uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
+            if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
+                pmm_free(phys);
+                for (int j = 0; j < pg; j++) {
+                    uint64_t jva = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
+                    vmm_unmap(&g_kernel_space, jva);
+                }
+                p->state = PROC_UNUSED;
+                return NULL;
+            }
+        }
+        p->kstack_guard = guard_va;
+        p->kstack = (uint8_t *) (guard_va + PAGE_SIZE);
+        p->kstack_top = guard_va + KSTACK_VA_STRIDE;
+
+        memset(p->fpu_state, 0, sizeof(p->fpu_state));
+        ((uint16_t *) p->fpu_state)[0] = 0x037F;
+        ((uint32_t *) (p->fpu_state + 24))[0] = 0x1F80;
+
+        uint8_t *ksp = p->kstack + KSTACK_SIZE;
+
+        ksp -= 8;
+        *(uint64_t *) ksp = (uint64_t) (uintptr_t) entry;
+
+        ksp -= 6 * 8;
+        memset(ksp, 0, 6 * 8);
+
+        p->kstack_rsp = (uint64_t) ksp;
+
+        return p;
+    }
+    return NULL;
 }
 
 void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t *rflags_slot) {
@@ -193,18 +282,7 @@ void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t 
     }
 
     while (p->ptrace_stopped) {
-        proc_t *next = proc_next_ready(p);
-        if (!next) {
-            sti();
-            hlt();
-            cli();
-            continue;
-        }
-        next->state = PROC_RUNNING;
-        vfs_set_fdtable(next->fds);
-        g_current_space = next->space;
-        cpu_set_kernel_stack(next->kstack_top);
-        sched_switch(next);
+        sched_yield_blocking();
     }
 
     if (rflags_slot) {

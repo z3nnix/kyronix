@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -21,6 +22,7 @@ typedef struct block_hdr {
 #define GROW_PAGES 16
 #define GROW_BYTES ((uint64_t) (GROW_PAGES) * PAGE_SIZE)
 
+static spinlock_t g_heap_lock = SPINLOCK_INIT;
 static block_hdr_t *g_head = NULL;
 static uint64_t g_brk = HEAP_START;
 static uint64_t g_kmalloc_total = 0;
@@ -80,6 +82,7 @@ void *kmalloc(uint64_t size) {
     size = (size + 15) & ~15ULL;
 
     uint64_t flags = irq_save();
+    spin_lock(&g_heap_lock);
 
     block_hdr_t *blk = g_head;
     while (blk) {
@@ -90,6 +93,7 @@ void *kmalloc(uint64_t size) {
     while (!blk || !blk->free || blk->size < size) {
         blk = heap_grow(size);
         if (!blk) {
+            spin_unlock(&g_heap_lock);
             irq_restore(flags);
             return NULL;
         }
@@ -108,6 +112,7 @@ void *kmalloc(uint64_t size) {
 
     blk->free = 0;
     g_kmalloc_total += blk->size;
+    spin_unlock(&g_heap_lock);
     irq_restore(flags);
 #ifdef CONFIG_KMEMLEAK
     kmemleak_track((uint8_t *) blk + HDR_SIZE, blk->size);
@@ -123,9 +128,11 @@ void kfree(void *ptr) {
 #endif
 
     uint64_t flags = irq_save();
+    spin_lock(&g_heap_lock);
 
     block_hdr_t *blk = (block_hdr_t *) ((uint8_t *) ptr - HDR_SIZE);
     if (blk->free) {
+        spin_unlock(&g_heap_lock);
         irq_restore(flags);
         return;
     }
@@ -144,6 +151,7 @@ void kfree(void *ptr) {
         if (blk->next) blk->next->prev = blk->prev;
     }
 
+    spin_unlock(&g_heap_lock);
     irq_restore(flags);
 }
 
@@ -179,16 +187,20 @@ uint64_t heap_brk(void) { return g_brk; }
 
 void heap_walk_used(void (*callback)(void *data, uint64_t size, void *user), void *user) {
     uint64_t flags = irq_save();
+    spin_lock(&g_heap_lock);
     block_hdr_t *b = g_head;
     while (b) {
         if (!b->free)
             callback((uint8_t *) b + HDR_SIZE, b->size, user);
         b = b->next;
     }
+    spin_unlock(&g_heap_lock);
     irq_restore(flags);
 }
 
 void heap_stats(void) {
+    uint64_t flags = irq_save();
+    spin_lock(&g_heap_lock);
     uint64_t free_bytes = 0, used_bytes = 0, nblocks = 0;
     block_hdr_t *b = g_head;
     while (b) {
@@ -201,4 +213,6 @@ void heap_stats(void) {
     }
     log_info("Heap: %lu blocks  used=%lu KiB  free=%lu KiB", nblocks, used_bytes >> 10,
              free_bytes >> 10);
+    spin_unlock(&g_heap_lock);
+    irq_restore(flags);
 }

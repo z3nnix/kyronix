@@ -7,15 +7,15 @@
 
 .global syscall_entry
 syscall_entry:
-    swapgs                              /* GS.base -> cpu_local_t *           */
-    movq    %rsp, %gs:CPU_USER_RSP      /* save user RSP                     */
-    movq    %gs:CPU_KERNEL_RSP, %rsp    /* sweitch to kernel stack            */
+    swapgs
+    movq    %rsp, %gs:CPU_USER_RSP
+    movq    %gs:CPU_KERNEL_RSP, %rsp
 
     pushq   %r15
     pushq   %r14
     pushq   %r13
     pushq   %r12
-    pushq   %r11        /* user RFLAGS */
+    pushq   %r11
     pushq   %r10
     pushq   %r9
     pushq   %r8
@@ -23,16 +23,20 @@ syscall_entry:
     pushq   %rdi
     pushq   %rsi
     pushq   %rdx
-    pushq   %rcx        /* user RIP */
+    pushq   %rcx
     pushq   %rbx
     pushq   %rax
+
+    call    bkl_lock
 
     movq    %rsp, %rdi
     call    syscall_dispatch
 
+    call    bkl_unlock
+
     popq    %rax
     popq    %rbx
-    popq    %rcx        /* user RIP */
+    popq    %rcx
     popq    %rdx
     popq    %rsi
     popq    %rdi
@@ -40,7 +44,7 @@ syscall_entry:
     popq    %r8
     popq    %r9
     popq    %r10
-    popq    %r11        /* user RFLAGS */
+    popq    %r11
     popq    %r12
     popq    %r13
     popq    %r14
