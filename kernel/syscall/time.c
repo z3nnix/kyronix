@@ -52,6 +52,7 @@ int64_t sys_nanosleep(void *r, void *m) {
     if (!p) return 0;
     uint64_t deadline = g_ticks + ms;
     p->wakeup_tick = deadline;
+    proc_set_timer(p);
     while (g_ticks < deadline) {
         if (proc_next_ready(p))
             sched_yield_blocking();
@@ -87,6 +88,7 @@ int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) 
     if (!p) return 0;
     uint64_t deadline = g_ticks + ms;
     p->wakeup_tick = deadline;
+    proc_set_timer(p);
     while (g_ticks < deadline) {
         if (proc_next_ready(p))
             sched_yield_blocking();
@@ -127,6 +129,7 @@ int64_t sys_setitimer(int w, const void *n, void *o) {
         uint64_t val_ms = nv[2] * 1000 + nv[3] / 1000;
         p->itimer_next_tick = val_ms ? g_ticks + val_ms : 0;
         p->itimer_value_ms = val_ms;
+        if (val_ms) proc_set_timer(p);
     }
     return 0;
 }
@@ -167,6 +170,7 @@ int64_t sys_alarm(uint32_t seconds) {
     uint64_t prev = 0;
     if (p->alarm_tick && p->alarm_tick > g_ticks) prev = (p->alarm_tick - g_ticks + 999) / 1000;
     p->alarm_tick = seconds ? g_ticks + (uint64_t) seconds * 1000 : 0;
+    if (seconds) proc_set_timer(p);
     return (int64_t) prev;
 }
 

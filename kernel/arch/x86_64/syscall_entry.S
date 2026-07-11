@@ -27,12 +27,8 @@ syscall_entry:
     pushq   %rbx
     pushq   %rax
 
-    call    bkl_lock
-
     movq    %rsp, %rdi
     call    syscall_dispatch
-
-    call    bkl_unlock
 
     popq    %rax
     popq    %rbx

@@ -1,4 +1,5 @@
 #include "inet_socket.h"
+#include "../arch/x86_64/spinlock.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/heap.h"
@@ -85,6 +86,7 @@ struct net_conn {
 
     struct net_conn *accept_head;
     struct net_conn *accept_next;
+    spinlock_t accept_lock;
 
     proc_t *rx_waiter;
     proc_t *connect_waiter;
@@ -98,14 +100,17 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
     if (!p || err != ERR_OK) {
         c->peer_closed = true;
         if (p) pbuf_free(p);
-        if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
+        proc_t *w = c->rx_waiter;
+        if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(w);
         return ERR_OK;
     }
 
     uint32_t freelen = (RX_BUF_SZ - 1u) - ring_avail(&c->rx);
     if (p->tot_len > freelen) {
-        if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING)
-            c->rx_waiter->state = PROC_READY; /* wake reader to drain the ring */
+        proc_t *w = c->rx_waiter;
+        if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(w);
         return ERR_MEM;
     }
 
@@ -117,7 +122,9 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
 
-    if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
+    proc_t *w = c->rx_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
     return ERR_OK;
 }
 
@@ -129,8 +136,9 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
         c->error = true;
         c->err_code = -(int) ECONNREFUSED;
     }
-    if (c->connect_waiter && c->connect_waiter->state == PROC_WAITING)
-        c->connect_waiter->state = PROC_READY;
+    proc_t *w = c->connect_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
     return ERR_OK;
 }
 
@@ -141,9 +149,12 @@ static void on_err(void *arg, err_t err) {
     c->error = true;
     c->err_code = -(int) ECONNREFUSED;
     c->pcb = NULL; /* already freed by lwIP */
-    if (c->connect_waiter && c->connect_waiter->state == PROC_WAITING)
-        c->connect_waiter->state = PROC_READY;
-    if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
+    proc_t *w = c->connect_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
+    proc_t *r = c->rx_waiter;
+    if (r && __sync_bool_compare_and_swap(&r->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(r);
 }
 
 static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
@@ -164,6 +175,7 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
     tcp_err(new_pcb, on_err);
 
     child->accept_next = NULL;
+    spin_lock(&srv->accept_lock);
     if (!srv->accept_head) {
         srv->accept_head = child;
     } else {
@@ -172,8 +184,10 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
         tail->accept_next = child;
     }
 
-    if (srv->accept_waiter && srv->accept_waiter->state == PROC_WAITING)
-        srv->accept_waiter->state = PROC_READY;
+    proc_t *w = srv->accept_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
+    spin_unlock(&srv->accept_lock);
 
     tcp_accepted(srv->pcb);
     return ERR_OK;
@@ -203,7 +217,9 @@ static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip
     pbuf_free(p);
 
     c->udq_head = next;
-    if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
+    proc_t *w = c->rx_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
 }
 
 static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip4_addr_t *addr) {
@@ -224,7 +240,9 @@ static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const
 
     c->udq_head = next;
     pbuf_free(p);
-    if (c->rx_waiter && c->rx_waiter->state == PROC_WAITING) c->rx_waiter->state = PROC_READY;
+    proc_t *w = c->rx_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
     return 1; /* consumed */
 }
 
@@ -457,9 +475,11 @@ int64_t inet_accept(net_conn_t *c, struct sockaddr_in *addr_out, int flags) {
         c->accept_waiter = NULL;
     }
 
+    spin_lock(&c->accept_lock);
     net_conn_t *child = c->accept_head;
     c->accept_head = child->accept_next;
     child->accept_next = NULL;
+    spin_unlock(&c->accept_lock);
 
     int fd = vfs_fd_alloc_from(0);
     if (fd < 0) {

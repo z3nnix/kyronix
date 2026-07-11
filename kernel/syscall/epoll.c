@@ -1,5 +1,6 @@
 #include "epoll.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "fs/vfs.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
@@ -42,6 +43,7 @@ typedef struct {
 
 static epoll_t g_epolls[EPOLL_SLOTS];
 static int g_epoll_init;
+static spinlock_t g_epolls_lock;
 
 static epoll_t *epoll_find(int epfd) {
     proc_t *p = g_current_proc;
@@ -61,6 +63,7 @@ int64_t sys_epoll_create1(int flags) {
         }
         g_epoll_init = 1;
     }
+    spin_lock(&g_epolls_lock);
     for (int i = 0; i < EPOLL_SLOTS; i++) {
         if (g_epolls[i].epfd >= 0 && g_epolls[i].owner_space == (p ? p->space : NULL) &&
             !fd_valid(g_epolls[i].epfd)) {
@@ -71,7 +74,7 @@ int64_t sys_epoll_create1(int flags) {
     }
     int epfd =
         fd_open_host("/dev/null", O_RDONLY, 0); /* internal handle: not subject to jail root */
-    if (epfd < 0) return -(int64_t) EMFILE;
+    if (epfd < 0) { spin_unlock(&g_epolls_lock); return -(int64_t) EMFILE; }
     epoll_t *ep = NULL;
     for (int i = 0; i < EPOLL_SLOTS; i++)
         if (g_epolls[i].epfd == -1) {
@@ -79,12 +82,14 @@ int64_t sys_epoll_create1(int flags) {
             break;
         }
     if (!ep) {
+        spin_unlock(&g_epolls_lock);
         fd_close(epfd);
         return -(int64_t) ENOMEM;
     }
     ep->epfd = epfd;
     ep->owner_space = p ? p->space : NULL;
     ep->nw = 0;
+    spin_unlock(&g_epolls_lock);
     return epfd;
 }
 
@@ -93,31 +98,38 @@ int64_t sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *ev) {
     if (!ep) return -(int64_t) EBADF;
     if (op != EPOLL_CTL_DEL && ev && !uptr_ok(ev, sizeof(*ev))) return -(int64_t) EFAULT;
     if (op != EPOLL_CTL_DEL && !fd_valid(fd)) return -(int64_t) EBADF;
+    spin_lock(&g_epolls_lock);
     switch (op) {
     case EPOLL_CTL_ADD:
-        if (ep->nw >= EPOLL_MAXW) return -(int64_t) ENOMEM;
+        if (ep->nw >= EPOLL_MAXW) { spin_unlock(&g_epolls_lock); return -(int64_t) ENOMEM; }
         for (int i = 0; i < ep->nw; i++)
-            if (ep->w[i].fd == fd) return -(int64_t) EEXIST;
+            if (ep->w[i].fd == fd) { spin_unlock(&g_epolls_lock); return -(int64_t) EEXIST; }
         ep->w[ep->nw] =
             (struct epoll_watch){ fd, ev ? ev->events : EPOLLIN | EPOLLOUT, ev ? ev->data : 0 };
         ep->nw++;
+        spin_unlock(&g_epolls_lock);
         return 0;
     case EPOLL_CTL_DEL:
         for (int i = 0; i < ep->nw; i++)
             if (ep->w[i].fd == fd) {
                 ep->w[i] = ep->w[--ep->nw];
+                spin_unlock(&g_epolls_lock);
                 return 0;
             }
+        spin_unlock(&g_epolls_lock);
         return -(int64_t) ENOENT;
     case EPOLL_CTL_MOD:
         for (int i = 0; i < ep->nw; i++)
             if (ep->w[i].fd == fd) {
                 ep->w[i].events = ev ? ev->events : 0;
                 ep->w[i].data = ev ? ev->data : 0;
+                spin_unlock(&g_epolls_lock);
                 return 0;
             }
+        spin_unlock(&g_epolls_lock);
         return -(int64_t) ENOENT;
     }
+    spin_unlock(&g_epolls_lock);
     return -(int64_t) EINVAL;
 }
 
@@ -148,6 +160,7 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
         if (n > 0 || timeout == 0 || g_ticks >= deadline) return n;
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
         if (p) p->wakeup_tick = g_ticks + 5;
+        if (p) proc_set_timer(p);
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {

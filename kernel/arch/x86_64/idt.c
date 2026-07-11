@@ -260,30 +260,45 @@ void isr_dispatch(cpu_state_t *state) {
             proc_reap_pending();
             net_poll();
             pic_send_eoi(0);
-            for (int i = 0; i < PROC_MAX; i++) {
+            uint64_t timer_mask = __atomic_load_n(&g_timer_mask, __ATOMIC_RELAXED);
+            uint64_t tm = timer_mask;
+            while (tm) {
+                int i = __builtin_ctzll(tm);
                 proc_t *pc = &g_proctable[i];
-                if (pc->state == PROC_UNUSED) continue;
                 if (pc->wakeup_tick && g_ticks >= pc->wakeup_tick) {
                     pc->wakeup_tick = 0;
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
+                    if (__sync_bool_compare_and_swap(&pc->state, PROC_WAITING, PROC_READY))
+                        proc_set_ready(pc);
                 }
                 if (pc->alarm_tick && g_ticks >= pc->alarm_tick) {
                     pc->alarm_tick = 0;
                     proc_send_signal(pc, SIGALRM);
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
                 }
                 if (pc->itimer_next_tick && g_ticks >= pc->itimer_next_tick) {
                     pc->itimer_next_tick =
                         pc->itimer_interval_ms ? pc->itimer_next_tick + pc->itimer_interval_ms : 0;
                     proc_send_signal(pc, SIGALRM);
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
                 }
+                tm &= tm - 1;
             }
+            /* rebuild: clear bits for processes with no pending timers */
+            tm = timer_mask;
+            uint64_t still_active = 0;
+            while (tm) {
+                int b = __builtin_ctzll(tm);
+                proc_t *pt = &g_proctable[b];
+                if (pt->wakeup_tick || pt->alarm_tick || pt->itimer_next_tick)
+                    still_active |= (1ULL << b);
+                tm &= tm - 1;
+            }
+            if (still_active != timer_mask)
+                __atomic_store_n(&g_timer_mask, still_active, __ATOMIC_RELAXED);
             if ((state->cs & 3) == 3 && g_current_proc) {
                 proc_t *p = g_current_proc;
                 proc_t *next = sched_claim_next(p);
                 if (next) {
                     p->state = PROC_READY;
+                    proc_set_ready(p);
                     vfs_set_fdtable(next->fds);
                     g_current_space = next->space;
                     cpu_set_kernel_stack(next->kstack_top);
@@ -308,6 +323,7 @@ void isr_dispatch(cpu_state_t *state) {
             proc_t *next = sched_claim_next(p);
             if (next) {
                 p->state = PROC_READY;
+                proc_set_ready(p);
                 vfs_set_fdtable(next->fds);
                 g_current_space = next->space;
                 cpu_set_kernel_stack(next->kstack_top);

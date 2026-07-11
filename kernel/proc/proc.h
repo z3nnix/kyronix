@@ -29,6 +29,7 @@ typedef struct proc {
     uint64_t user_rsp;
     int exit_code;
     int wait_for;
+    uint32_t refcount;
     uint64_t brk;
     uint64_t brk_base;
     uint64_t mmap_bump;
@@ -76,6 +77,52 @@ typedef struct proc {
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
+
+extern spinlock_t g_proctable_lock;
+
+extern volatile uint64_t g_ready_mask;
+extern volatile uint64_t g_used_mask;
+extern volatile uint64_t g_timer_mask;
+
+static inline int proc_slot(proc_t *p) { return (int)(p - g_proctable); }
+
+static inline void proc_set_ready(proc_t *p) {
+    int bit = proc_slot(p);
+    __atomic_fetch_or(&g_ready_mask, 1ULL << bit, __ATOMIC_RELAXED);
+    __atomic_fetch_or(&g_used_mask, 1ULL << bit, __ATOMIC_RELAXED);
+}
+
+static inline void proc_clear_ready(proc_t *p) {
+    __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(p)), __ATOMIC_RELAXED);
+}
+
+static inline void proc_set_used(proc_t *p) {
+    __atomic_fetch_or(&g_used_mask, 1ULL << proc_slot(p), __ATOMIC_RELAXED);
+}
+
+static inline void proc_clear_used(proc_t *p) {
+    __atomic_fetch_and(&g_used_mask, ~(1ULL << proc_slot(p)), __ATOMIC_RELAXED);
+    __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(p)), __ATOMIC_RELAXED);
+    __atomic_fetch_and(&g_timer_mask, ~(1ULL << proc_slot(p)), __ATOMIC_RELAXED);
+}
+
+static inline void proc_set_timer(proc_t *p) {
+    __atomic_fetch_or(&g_timer_mask, 1ULL << proc_slot(p), __ATOMIC_RELAXED);
+}
+
+static inline void proc_ref(proc_t *p) {
+    __atomic_fetch_add(&p->refcount, 1, __ATOMIC_RELAXED);
+}
+
+void proc_kstack_free(proc_t *p);
+
+static inline void proc_unref(proc_t *p) {
+    if (__atomic_fetch_sub(&p->refcount, 1, __ATOMIC_ACQ_REL) == 1) {
+        proc_kstack_free(p);
+        p->state = PROC_UNUSED;
+        proc_clear_used(p);
+    }
+}
 
 #include "arch/x86_64/percpu.h"
 static inline proc_t **__g_current_proc_slot(void) {

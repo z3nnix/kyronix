@@ -43,7 +43,10 @@ static void tty_enqueue(uint8_t c) {
         tty_buf[tty_buf_head] = c;
         tty_buf_head = next;
     }
-    if (tty_waiter && tty_waiter->state == PROC_WAITING) tty_waiter->state = PROC_READY;
+    if (tty_waiter && tty_waiter->state == PROC_WAITING) {
+        tty_waiter->state = PROC_READY;
+        proc_set_ready(tty_waiter);
+    }
     tty_waiter = NULL;
 }
 
@@ -165,6 +168,7 @@ int64_t tty_read(char *buf, uint64_t len) {
 
         tty_waiter = g_current_proc;
         if (g_current_proc) g_current_proc->wakeup_tick = g_ticks + 1;
+        if (g_current_proc) proc_set_timer(g_current_proc);
         sched_yield_blocking();
         if (g_current_proc) g_current_proc->wakeup_tick = 0;
         if (tty_waiter == g_current_proc) tty_waiter = NULL;

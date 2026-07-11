@@ -45,6 +45,7 @@ int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout) {
         if (g_ticks >= deadline) break;
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
         p->wakeup_tick = g_ticks + 5;
+        proc_set_timer(p);
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {
@@ -118,6 +119,7 @@ static int64_t sys_select_common(int nfds, void *rfds, void *wfds, void *efds, v
         }
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
         p->wakeup_tick = g_ticks + 5;
+        proc_set_timer(p);
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {

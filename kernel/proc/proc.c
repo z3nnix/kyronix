@@ -13,8 +13,8 @@ _Static_assert(__builtin_offsetof(proc_t, space) == 16, "sched.S PROC_SPACE");
 _Static_assert(__builtin_offsetof(proc_t, kstack_top) == 32, "sched.S PROC_KSTACK_TOP");
 _Static_assert(__builtin_offsetof(proc_t, kstack_rsp) == 40, "sched.S PROC_KSTACK_RSP");
 _Static_assert(__builtin_offsetof(proc_t, user_rsp) == 48, "sched.S PROC_USER_RSP");
-_Static_assert(__builtin_offsetof(proc_t, fs_base) == 88, "sched.S PROC_FS_BASE");
-_Static_assert(__builtin_offsetof(proc_t, fpu_state) == 3312, "sched.S PROC_FPU_STATE");
+_Static_assert(__builtin_offsetof(proc_t, fs_base) == 96, "sched.S PROC_FS_BASE");
+_Static_assert(__builtin_offsetof(proc_t, fpu_state) == 3328, "sched.S PROC_FPU_STATE");
 
 #define KSTACK_VA_BASE 0xffff920000000000ULL
 #define KSTACK_VA_STRIDE ((KSTACK_PAGES + 1) * PAGE_SIZE)
@@ -23,12 +23,19 @@ static uint64_t g_kstack_va_bump = KSTACK_VA_BASE;
 
 proc_t g_proctable[PROC_MAX];
 
+spinlock_t g_proctable_lock = { .lock = 0 };
+
+volatile uint64_t g_ready_mask = 0;
+volatile uint64_t g_used_mask = 0;
+volatile uint64_t g_timer_mask = 0;
+
 void proc_init(void) {
     memset(g_proctable, 0, sizeof(g_proctable));
     log_info("PROC: table initialised  (%d slots)", PROC_MAX);
 }
 
 proc_t *proc_alloc(uint32_t ppid) {
+    spin_lock(&g_proctable_lock);
     for (int i = 0; i < PROC_MAX; i++) {
         if (g_proctable[i].state != PROC_UNUSED) continue;
 
@@ -36,10 +43,12 @@ proc_t *proc_alloc(uint32_t ppid) {
         memset(p, 0, sizeof(*p));
 
         p->state = PROC_READY;
+        proc_set_ready(p);
         p->pid = (uint32_t) (i + 1);
         p->ppid = ppid;
         p->pgid = (uint32_t) (i + 1);
         p->wait_for = 0;
+        p->refcount = 1;
 
         uint64_t guard_va = g_kstack_va_bump;
         g_kstack_va_bump += KSTACK_VA_STRIDE;
@@ -54,6 +63,8 @@ proc_t *proc_alloc(uint32_t ppid) {
                     if (pa) pmm_free((void *) pa);
                 }
                 p->state = PROC_UNUSED;
+                proc_clear_used(p);
+                spin_unlock(&g_proctable_lock);
                 return NULL;
             }
             uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
@@ -66,6 +77,8 @@ proc_t *proc_alloc(uint32_t ppid) {
                     if (pa) pmm_free((void *) pa);
                 }
                 p->state = PROC_UNUSED;
+                proc_clear_used(p);
+                spin_unlock(&g_proctable_lock);
                 return NULL;
             }
         }
@@ -77,6 +90,8 @@ proc_t *proc_alloc(uint32_t ppid) {
         if (!p->fds) {
             proc_kstack_free(p);
             p->state = PROC_UNUSED;
+            proc_clear_used(p);
+            spin_unlock(&g_proctable_lock);
             return NULL;
         }
         p->fds_refcnt = (uint32_t *) kmalloc(sizeof(uint32_t));
@@ -85,6 +100,8 @@ proc_t *proc_alloc(uint32_t ppid) {
             p->fds = NULL;
             proc_kstack_free(p);
             p->state = PROC_UNUSED;
+            proc_clear_used(p);
+            spin_unlock(&g_proctable_lock);
             return NULL;
         }
         *p->fds_refcnt = 1;
@@ -99,8 +116,10 @@ proc_t *proc_alloc(uint32_t ppid) {
         ((uint16_t *) p->fpu_state)[0] = 0x037F;        /* FCW */
         ((uint32_t *) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
 
+        spin_unlock(&g_proctable_lock);
         return p;
     }
+    spin_unlock(&g_proctable_lock);
     return NULL;
 }
 
@@ -108,8 +127,7 @@ void proc_reap_pending(void) {
     proc_t *p = g_reap_thread;
     if (!p || p == g_current_proc) return; /* never free the stack we are running on */
     g_reap_thread = NULL;
-    proc_kstack_free(p);    /* idempotent: clears kstack_guard */
-    p->state = PROC_UNUSED; /* slot reusable only now that its stack is gone */
+    proc_unref(p);
 }
 
 void proc_defer_thread_reap(proc_t *p) {
@@ -130,38 +148,60 @@ void proc_kstack_free(proc_t *p) {
 }
 
 proc_t *proc_find(uint32_t pid) {
-    for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state != PROC_UNUSED && g_proctable[i].pid == pid)
+    spin_lock(&g_proctable_lock);
+    for (int i = 0; i < PROC_MAX; i++) {
+        if (g_proctable[i].state != PROC_UNUSED && g_proctable[i].pid == pid) {
+            proc_ref(&g_proctable[i]);
+            spin_unlock(&g_proctable_lock);
             return &g_proctable[i];
+        }
+    }
+    spin_unlock(&g_proctable_lock);
     return NULL;
 }
 
 proc_t *proc_next_ready(proc_t *skip) {
     static uint32_t g_last_scheduled[MAX_CPUS] = {0};
     uint32_t cpu = this_cpu_id();
+    uint64_t ready = __atomic_load_n(&g_ready_mask, __ATOMIC_RELAXED);
     int start = ((int) g_last_scheduled[cpu] + 1) % PROC_MAX;
-    for (int j = 0; j < PROC_MAX; j++) {
-        int i = (start + j) % PROC_MAX;
-        if (&g_proctable[i] == skip) continue;
-        if (g_proctable[i].state == PROC_READY && g_proctable[i].pid != 0) {
-            g_last_scheduled[cpu] = (uint32_t) i;
-            return &g_proctable[i];
+
+    /* Fast path: bitmap scan from start, wrap around */
+    uint64_t mask = ready >> start;
+    while (mask) {
+        int bit = __builtin_ctzll(mask) + start;
+        if (&g_proctable[bit] != skip && g_proctable[bit].pid != 0) {
+            g_last_scheduled[cpu] = (uint32_t) bit;
+            return &g_proctable[bit];
         }
+        mask &= mask - 1;
     }
+    mask = ready & ((1ULL << start) - 1);
+    while (mask) {
+        int bit = __builtin_ctzll(mask);
+        if (&g_proctable[bit] != skip && g_proctable[bit].pid != 0) {
+            g_last_scheduled[cpu] = (uint32_t) bit;
+            return &g_proctable[bit];
+        }
+        mask &= mask - 1;
+    }
+
     return NULL;
 }
 
 proc_t *sched_claim_next(proc_t *skip) {
     proc_t *next = proc_next_ready(skip);
     if (!next) return NULL;
-    if (__sync_bool_compare_and_swap(&next->state, PROC_READY, PROC_RUNNING))
+    if (__sync_bool_compare_and_swap(&next->state, PROC_READY, PROC_RUNNING)) {
+        __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
         return next;
+    }
     return NULL;
 }
 
 proc_t *proc_idle_until_ready(proc_t *skip) {
     for (;;) {
-        proc_t *nt = proc_next_ready(skip);
+        proc_t *nt = sched_claim_next(skip);
         if (nt) return nt;
         sti();
         hlt();
@@ -174,6 +214,7 @@ void sched_yield_blocking(void) {
 
     for (;;) {
         p->state = PROC_WAITING;
+        proc_clear_ready(p);
 
         proc_t *next = sched_claim_next(p);
         if (!next) {
@@ -190,9 +231,7 @@ void sched_yield_blocking(void) {
             vfs_set_fdtable(next->fds);
             g_current_space = next->space;
             cpu_set_kernel_stack(next->kstack_top);
-            bkl_unlock();
             sched_switch(next);
-            bkl_lock();
 
             p->state = PROC_RUNNING;
             vfs_set_fdtable(p->fds);
@@ -219,6 +258,7 @@ proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {
         memset(p, 0, sizeof(*p));
 
         p->state = PROC_READY;
+        proc_set_ready(p);
         p->pid = 0;
         p->ppid = 0;
         p->space = &g_kernel_space;
@@ -234,6 +274,7 @@ proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {
                     vmm_unmap(&g_kernel_space, va);
                 }
                 p->state = PROC_UNUSED;
+                proc_clear_used(p);
                 return NULL;
             }
             uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
@@ -244,6 +285,7 @@ proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {
                     vmm_unmap(&g_kernel_space, jva);
                 }
                 p->state = PROC_UNUSED;
+                proc_clear_used(p);
                 return NULL;
             }
         }
@@ -276,11 +318,16 @@ void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t 
     p->ptrace_frame = frame;
     p->ptrace_stopped = 1;
     p->state = PROC_WAITING;
+    proc_clear_ready(p);
 
     proc_t *tracer = proc_find(p->tracer_pid);
     if (tracer && tracer->state != PROC_UNUSED) {
         proc_send_signal(tracer, SIGCHLD);
-        if (tracer->state == PROC_WAITING) tracer->state = PROC_READY;
+        if (tracer->state == PROC_WAITING) {
+            tracer->state = PROC_READY;
+            proc_set_ready(tracer);
+        }
+        proc_unref(tracer);
     }
 
     while (p->ptrace_stopped) {

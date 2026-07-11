@@ -13,6 +13,3 @@ void smp_init(void);
 void smp_boot_aps(void);
 
 __attribute__((noreturn)) void ap_sched_loop(void);
-
-void bkl_lock(void);
-void bkl_unlock(void);

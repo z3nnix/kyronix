@@ -19,7 +19,6 @@
 
 extern void syscall_entry(void);
 
-bkl_t g_kernel_lock = { .lock = 0, .owner = ~0u, .depth = 0 };
 volatile uint32_t g_cpu_count = 1;
 volatile uint32_t g_aps_ready = 0;
 volatile uint32_t g_kernel_ready = 0;
@@ -65,9 +64,6 @@ void smp_init(void) {
     g_cpu_count = next_id;
 }
 
-void bkl_lock(void) { kernel_lock(); }
-void bkl_unlock(void) { kernel_unlock(); }
-
 extern void ap_trampoline(void);
 
 void __attribute__((noreturn)) ap_sched_loop(void) {
@@ -76,6 +72,7 @@ void __attribute__((noreturn)) ap_sched_loop(void) {
         proc_t *next = sched_claim_next(idle);
         if (next) {
             idle->state = PROC_READY;
+            proc_set_ready(idle);
         }
 
         if (next) {
