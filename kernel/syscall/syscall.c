@@ -1218,7 +1218,7 @@ static int64_t sys_uname(struct utsname *buf) {
     memcpy(buf->sysname, "k9", 7);
     memcpy(buf->nodename, "kx", 2);
     memcpy(buf->release, KERNEL_VERSION, sizeof(KERNEL_VERSION));
-    memcpy(buf->version, "UP", 6);
+    memcpy(buf->version, "#1 SMP", 6);
     memcpy(buf->machine, "x86_64", 6);
     return 0;
 }

@@ -84,7 +84,6 @@ int test_smp_pingpong(void) {
     ASSERT_EQ(pipe(p2), 0);
 
     pid_t child = fork();
-    ASSERT_GT(child, 0);
 
     if (child == 0) {
         close(p1[1]); close(p2[0]);
@@ -97,6 +96,7 @@ int test_smp_pingpong(void) {
         _exit(0);
     }
 
+    ASSERT_GT(child, 0);
     close(p1[0]); close(p2[1]);
     char buf = 42;
     for (int i = 0; i < 5000; i++) {

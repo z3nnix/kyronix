@@ -34,7 +34,7 @@ $(shell if ! [ -f $(CONFIG_H) ]; then \
 	echo '/* Auto-generated */' > $(CONFIG_H); \
 	echo '#define CONFIG_KMEMLEAK 1' >> $(CONFIG_H); \
 	echo '#define CONFIG_SERIAL_CONSOLE 1' >> $(CONFIG_H); \
-	echo '#define CONFIG_LOG_LEVEL 2' >> $(CONFIG_H); \
+	echo '#define CONFIG_LOG_LEVEL 1' >> $(CONFIG_H); \
 fi)
 
 CFLAGS := \
