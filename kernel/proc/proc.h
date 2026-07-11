@@ -94,6 +94,7 @@ void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t 
 void proc_reap_pending(void);
 proc_t *proc_find(uint32_t pid);
 proc_t *proc_next_ready(proc_t *skip);
+proc_t *sched_claim_next(proc_t *skip);
 proc_t *proc_idle_until_ready(proc_t *skip);
 void sched_switch(proc_t *next);
 void sched_yield_blocking(void);

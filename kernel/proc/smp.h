@@ -5,7 +5,6 @@
 #include "boot/limine.h"
 #include <stdint.h>
 
-extern spinlock_t g_sched_lock;
 extern volatile uint32_t g_cpu_count;
 extern volatile uint32_t g_aps_ready;
 extern volatile uint32_t g_kernel_ready;

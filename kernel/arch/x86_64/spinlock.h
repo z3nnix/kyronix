@@ -3,12 +3,6 @@
 #include "cpu.h"
 #include "percpu.h"
 
-typedef struct {
-    volatile uint64_t lock;
-} spinlock_t;
-
-#define SPINLOCK_INIT ((spinlock_t){ .lock = 0 })
-
 static inline void spin_lock(spinlock_t *s) {
     for (;;) {
         if (__sync_bool_compare_and_swap(&s->lock, 0, 1))

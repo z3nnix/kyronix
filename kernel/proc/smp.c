@@ -20,7 +20,6 @@
 extern void syscall_entry(void);
 
 bkl_t g_kernel_lock = { .lock = 0, .owner = ~0u, .depth = 0 };
-spinlock_t g_sched_lock = SPINLOCK_INIT;
 volatile uint32_t g_cpu_count = 1;
 volatile uint32_t g_aps_ready = 0;
 volatile uint32_t g_kernel_ready = 0;
@@ -73,22 +72,20 @@ extern void ap_trampoline(void);
 
 void __attribute__((noreturn)) ap_sched_loop(void) {
     proc_t *idle = g_current_proc;
-    uint32_t my_cpu = this_cpu_id();
     for (;;) {
-        spin_lock(&g_sched_lock);
-        proc_t *next = proc_next_ready(idle);
+        proc_t *next = sched_claim_next(idle);
         if (next) {
-            next->state = PROC_RUNNING;
+            idle->state = PROC_READY;
         }
-        idle->state = PROC_READY;
-        spin_unlock(&g_sched_lock);
 
         if (next) {
             vfs_set_fdtable(next->fds);
             g_current_space = next->space;
             cpu_set_kernel_stack(next->kstack_top);
             sched_switch(next);
-            g_current_space = &g_kernel_space;
+            idle->state = PROC_RUNNING;
+            vfs_set_fdtable(idle->fds);
+            g_current_space = idle->space;
             cpu_set_kernel_stack(idle->kstack_top);
         } else {
             __asm__ volatile("sti; hlt" ::: "memory");

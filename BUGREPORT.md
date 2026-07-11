@@ -1,4 +1,5 @@
 # Kyronix Kernel — SMP Bug Report
+> this report is AI-generated btw. Don't bite me please haha (will remove in upstream)
 
 ## Critical Bugs
 

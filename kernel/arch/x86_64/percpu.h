@@ -1,6 +1,12 @@
 #pragma once
 #include "cpu.h"
 #include <stdint.h>
+
+typedef struct {
+    volatile uint64_t lock;
+} spinlock_t;
+
+#define SPINLOCK_INIT ((spinlock_t){ .lock = 0 })
 #define this_cpu_ptr() (__extension__({ \
     uint32_t __id; \
     __asm__ volatile("movl %%gs:16, %0" : "=r"(__id)); \

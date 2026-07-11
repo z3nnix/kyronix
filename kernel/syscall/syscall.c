@@ -2171,14 +2171,9 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case 24: {
         proc_t *p = cur();
-        spin_lock(&g_sched_lock);
-        proc_t *next = proc_next_ready(p);
+        proc_t *next = sched_claim_next(p);
         if (next) {
             p->state = PROC_READY;
-            next->state = PROC_RUNNING;
-        }
-        spin_unlock(&g_sched_lock);
-        if (next) {
             vfs_set_fdtable(next->fds);
             g_current_space = next->space;
             cpu_set_kernel_stack(next->kstack_top);

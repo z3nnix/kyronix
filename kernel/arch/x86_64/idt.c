@@ -280,24 +280,19 @@ void isr_dispatch(cpu_state_t *state) {
                 }
             }
             if ((state->cs & 3) == 3 && g_current_proc) {
-                spin_lock(&g_sched_lock);
                 proc_t *p = g_current_proc;
-                proc_t *next = proc_next_ready(p);
+                proc_t *next = sched_claim_next(p);
                 if (next) {
                     p->state = PROC_READY;
-                    next->state = PROC_RUNNING;
                     vfs_set_fdtable(next->fds);
                     g_current_space = next->space;
                     cpu_set_kernel_stack(next->kstack_top);
-                    spin_unlock(&g_sched_lock);
                     sched_switch(next);
-                    spin_lock(&g_sched_lock);
                     p->state = PROC_RUNNING;
                     vfs_set_fdtable(p->fds);
                     g_current_space = p->space;
                     cpu_set_kernel_stack(p->kstack_top);
                 }
-                spin_unlock(&g_sched_lock);
             }
         } else {
             irq_handler_t *h = &g_irq_handlers[irq];
@@ -309,24 +304,19 @@ void isr_dispatch(cpu_state_t *state) {
     } else if (n == LAPIC_TIMER_VEC) {
         lapic_eoi();
         if ((state->cs & 3) == 3 && g_current_proc) {
-            spin_lock(&g_sched_lock);
             proc_t *p = g_current_proc;
-            proc_t *next = proc_next_ready(p);
+            proc_t *next = sched_claim_next(p);
             if (next) {
                 p->state = PROC_READY;
-                next->state = PROC_RUNNING;
                 vfs_set_fdtable(next->fds);
                 g_current_space = next->space;
                 cpu_set_kernel_stack(next->kstack_top);
-                spin_unlock(&g_sched_lock);
                 sched_switch(next);
-                spin_lock(&g_sched_lock);
                 p->state = PROC_RUNNING;
                 vfs_set_fdtable(p->fds);
                 g_current_space = p->space;
                 cpu_set_kernel_stack(p->kstack_top);
             }
-            spin_unlock(&g_sched_lock);
         }
     }
 }

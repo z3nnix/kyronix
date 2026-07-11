@@ -2,7 +2,7 @@
 #include "cpu.h"
 #include "pic.h"
 
-#define PIT_DIVISOR 1193
+#define PIT_DIVISOR 4772
 
 volatile uint64_t g_ticks = 0;
 uint64_t g_epoch_base = 0;

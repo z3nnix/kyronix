@@ -137,8 +137,6 @@ proc_t *proc_find(uint32_t pid) {
 }
 
 proc_t *proc_next_ready(proc_t *skip) {
-    /* Round-robin: start scanning from the slot after the last-scheduled one
-     * to give all processes a fair chance. */
     static uint32_t g_last_scheduled[MAX_CPUS] = {0};
     uint32_t cpu = this_cpu_id();
     int start = ((int) g_last_scheduled[cpu] + 1) % PROC_MAX;
@@ -150,6 +148,14 @@ proc_t *proc_next_ready(proc_t *skip) {
             return &g_proctable[i];
         }
     }
+    return NULL;
+}
+
+proc_t *sched_claim_next(proc_t *skip) {
+    proc_t *next = proc_next_ready(skip);
+    if (!next) return NULL;
+    if (__sync_bool_compare_and_swap(&next->state, PROC_READY, PROC_RUNNING))
+        return next;
     return NULL;
 }
 
@@ -169,8 +175,7 @@ void sched_yield_blocking(void) {
     for (;;) {
         p->state = PROC_WAITING;
 
-        spin_lock(&g_sched_lock);
-        proc_t *next = proc_next_ready(p);
+        proc_t *next = sched_claim_next(p);
         if (!next) {
             uint32_t cpu_id = this_cpu_id();
             next = (proc_t *) g_cpu_local[cpu_id].idle;
@@ -179,10 +184,7 @@ void sched_yield_blocking(void) {
             } else {
                 next->state = PROC_RUNNING;
             }
-        } else {
-            next->state = PROC_RUNNING;
         }
-        spin_unlock(&g_sched_lock);
 
         if (next) {
             vfs_set_fdtable(next->fds);
