@@ -59,21 +59,23 @@ typedef struct proc {
     uint8_t fpu_state[512] __attribute__((aligned(16)));
     uint64_t sig_altstack_sp;
     uint64_t sig_altstack_size;
-    uint8_t on_sigstack;
-    uint64_t pages_alloc;
-    uint64_t pages_freed;
-    uint32_t jail_id;
-    uint8_t jail_exempt;
+    uint8_t on_sigstack;  /* currently executing a handler on the alt stack */
+    uint64_t pages_alloc; /* pages allocated via brk/mmap */
+    uint64_t pages_freed; /* pages freed via munmap/shrink brk */
+    uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
+    uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
 
-    uint32_t tracer_pid;
-    uint8_t ptrace_stopped;
-    uint8_t ptrace_reported;
-    uint8_t ptrace_stop_sig;
-    uint8_t ptrace_syscall_trace;
-    uint8_t ptrace_in_syscall;
-    uint8_t ptrace_step;
-    uint8_t ptrace_frame_kind;
-    void *ptrace_frame;
+    uint32_t tracer_pid;        /* 0 = not traced */
+    uint8_t ptrace_stopped;     /* currently in ptrace-stop, waiting for tracer */
+    uint8_t ptrace_reported;    /* this stop was already handed back via wait4 */
+    uint8_t ptrace_stop_sig;    /* signal reported to the tracer for this stop */
+    uint8_t ptrace_syscall_trace; /* PTRACE_SYSCALL: stop at syscall enter/exit */
+    uint8_t ptrace_in_syscall;   /* toggles enter/exit for PTRACE_SYSCALL */
+    uint8_t ptrace_step;         /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
+    uint8_t ptrace_frame_kind;   /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
+    void *ptrace_frame;          /* frame the tracee is stopped in, valid while stopped */
+    uint64_t ptrace_orig_rax;    /* syscall nr as of entry; rax itself gets clobbered by the
+                                   * return value before an exit-stop can report it */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

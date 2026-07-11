@@ -5,6 +5,9 @@ OUT := ../../build/bin
 UTILS := awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
 	find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
 	sed seq sleep sort stress sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes
+UTILS := awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup patch ping printenv printf ps pwd readlink reboot rm rmdir \
+	sed seq sleep sort sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes
 
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)

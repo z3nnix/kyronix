@@ -1,13 +1,19 @@
 # Kyronix
 
-> Operating system that sucks less.
+<img align="left" src="meta/logo.png" width="120" alt="Kyronix logo">
+
+Operating system that sucks less.
 
 ![Commits per month](https://img.shields.io/github/commit-activity/m/kyronix-project/kyronix)
 [![test](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml/badge.svg)](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml)
 [![ISC](https://img.shields.io/badge/license-ISC-blue)](#)
 [![x86-64](https://img.shields.io/badge/arch-x86__64-lightgrey)](#)
+[![AI](https://img.shields.io/badge/AI--assisted-blueviolet)](#)
 
-Kyronix is ​​a modern hybrid Linux-compatible OS with a focus on maximum speed and security.
+<br clear="left"/>
+
+Kyronix is a modern hybrid Linux-compatible operating system focused on
+performance, security and Linux compatibility.
 
 <img src="meta/screenshots/preview.png" alt="Kyronix preview" width="640">
 
@@ -16,58 +22,60 @@ Kyronix is ​​a modern hybrid Linux-compatible OS with a focus on maximum spe
 ### Kernel
 - x86-64, 4-level paging, SMEP, NX-bit
 - Limine bootloader (BIOS + UEFI)
-- Preemptive scheduler (PIT ~1000 Hz)
-- ELF64 loader with PIE + musl dynamic linker
+- Preemptive scheduler (~1000 Hz)
+- ELF64 loader (PIE + musl)
 - 150+ Linux-compatible syscalls
-- Demand paging (anonymous + file-backed mmap, mprotect, mremap, brk)
-- Real-time clock, CPUID, RDRAND
+- Demand paging (`mmap`, `mprotect`, `mremap`, `brk`)
+- RTC, CPUID, RDRAND
 
 ### Drivers
-- Framebuffer console with PSF fonts
+- Framebuffer console (PSF fonts)
 - PS/2 keyboard & mouse
-- PCI enumeration (up to 64 devices)
-- AHCI (SATA) disk
+- PCI enumeration
+- AHCI (SATA)
 - virtio-net
 - Serial console (COM1)
-- evdev input subsystem (`/dev/input/event*`)
+- evdev (`/dev/input/event*`)
 - Virtual terminals
-- UIO (userspace I/O)
+- UIO
 
 ### Filesystems
-- VFS with POSIX operations
+- POSIX VFS
 - CPIO initramfs
-- Ext2 read/write
-- Fat32 read/write
+- Ext2 (R/W)
+- FAT32 (R/W)
 - procfs, devfs
 - eventfd, pipe, AF_UNIX sockets
 
 ### Networking ([LwIP](https://github.com/stm32duino/lwip))
 - ARP, IPv4, ICMP, UDP, TCP
 - DHCP client
-- AF_INET socket API (sendto/recvfrom, connect, listen, accept)
-- ping, wget, nc utilities
+- AF_INET socket API
+- ping, wget, nc
 
 ### Userspace
-- **ksh**: shell with pipes, redirects, history, tilde expansion
-- **vi**: text editor
-- **Kyrobox**: standalone POSIX command binaries
-- **login**: password authentication
-- Runs musl-linked programs: tcc, nasm, dillo, etc.
+- **ksh** shell
+- **vi** text editor
+- **Kyrobox** POSIX utilities
+- **login** authentication
+- Runs musl-linked applications (tcc, nasm, dillo, etc.)
 
 ### Advanced
-- Full signal handling (rt_sigaction, SIGCHLD, SIGPIPE, sigaltstack)
-- clone() with CLONE_VM / CLONE_THREAD / CLONE_SETTLS
-- Jails - Kyronix-native containerization (FS/PID/IPC isolation)
-- Shared memory (SHM: shmget/shmat/shmdt/shmctl)
-- futex (WAIT, WAKE, REQUEUE, CMP_REQUEUE)
+- POSIX signals
+- `clone()` threads
+- Jails (FS/PID/IPC isolation)
+- Shared memory
+- futex
 - epoll, poll, select
-- Comprehensive test suite (Ci)
+- Continuous integration test suite
 
 ## Build
 
 ### Dependencies
 
-` gcc ; musl-tools ; qemu-system ; xorriso ; nasm `
+```sh
+gcc musl-tools qemu-system xorriso nasm
+```
 
 ### Quick start
 
@@ -75,7 +83,7 @@ Kyronix is ​​a modern hybrid Linux-compatible OS with a focus on maximum spe
 make clean && make all && make run
 ```
 
-Or without graphics (serial console):
+Without graphics:
 
 ```sh
 make clean && make all && make run-serial
@@ -83,34 +91,37 @@ make clean && make all && make run-serial
 
 ### Make targets
 
-| Target | Does |
-|--------|------|
-| `all` | Build all |
-| `iso` | Build .iso |
-| `run` / `run-serial` | Qemu launch |
-| `test-run` / `test-run-log` | Run tests in qemu |
+| Target | Description |
+|---------|-------------|
+| `all` | Build everything |
+| `iso` | Build ISO image |
+| `run` | Launch in QEMU |
+| `run-serial` | Launch with serial console |
+| `test-run` | Run tests |
+| `test-run-log` | Run tests with logging |
 | `user-build` | Build userspace |
-| `fmt` / `fmt-check` | Refactor code |
+| `fmt` | Format source |
+| `fmt-check` | Check formatting |
 | `clean` | Remove build artifacts |
 
 ## Project structure
 
-| Path | Contents |
-|------|----------|
-| `kernel/` | Core kernel |
+| Directory | Purpose |
+|-----------|---------|
+| `kernel/` | Kernel source |
 | `user/` | Userspace |
 | `rootfs/` | Initramfs |
-| `limine/` | Limine BL |
-| `meta/` | Screenshots |
+| `limine/` | Bootloader |
+| `meta/` | Assets & screenshots |
 
 ## Support
 
-<a href="https://buymeacoffee.com/kyron1x" target="_blank">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" style="border-radius: 8px;" />
+If you like Kyronix, consider supporting its development.
 
+<a href="https://buymeacoffee.com/kyron1x">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me a Coffee">
 </a>
 
 ## License
 
-ISC. Do whatever you want.
-
+Distributed under the ISC License. See `LICENSE` for more information.
