@@ -6,11 +6,12 @@
 #define PROC_KSTACK_TOP 32
 #define PROC_KSTACK_RSP 40
 #define PROC_USER_RSP   48
-#define PROC_FS_BASE    88
-#define PROC_FPU_STATE  3312
+#define PROC_FS_BASE    96
+#define PROC_FPU_STATE  3328
 
 #define CPU_KERNEL_RSP  0
 #define CPU_USER_RSP    8
+#define CPU_CURRENT     32
 
 .global sched_switch
 sched_switch:
@@ -21,12 +22,11 @@ sched_switch:
     pushq   %r14
     pushq   %r15
 
-    movq    g_current_proc(%rip), %r15
+    movq    %gs:CPU_CURRENT, %r15
 
     /* save fpe/sse state of outgoing process */
     fxsave64 PROC_FPU_STATE(%r15)
 
-    /* save fs base of outgoing process */
     movl    $0xC0000100, %ecx
     rdmsr
     shlq    $32, %rdx
@@ -38,7 +38,7 @@ sched_switch:
     movq    %gs:CPU_USER_RSP, %rcx
     movq    %rcx,            PROC_USER_RSP(%r15)
 
-    movq    %rdi,            g_current_proc(%rip)
+    movq    %rdi,            %gs:CPU_CURRENT
 
     movq    PROC_USER_RSP(%rdi),    %rcx
     movq    %rcx,                   %gs:CPU_USER_RSP
@@ -46,7 +46,6 @@ sched_switch:
     movq    PROC_KSTACK_TOP(%rdi),  %rcx
     movq    %rcx,                   %gs:CPU_KERNEL_RSP
 
-    /* restore fs base of incoming process */
     pushq   %rcx
     pushq   %rdx
     movq    PROC_FS_BASE(%rdi),  %rax
@@ -60,11 +59,9 @@ sched_switch:
     movq    PROC_SPACE(%rdi),       %rdi
     call    vmm_switch
 
-    /* rax clobbered by vmm_switch */
-    movq    g_current_proc(%rip),   %rax
+    movq    %gs:CPU_CURRENT,   %rax
     movq    PROC_KSTACK_RSP(%rax),  %rsp
 
-    /* restore fpu sse state of incoming process */
     fxrstor64 PROC_FPU_STATE(%rax)
 
     popq    %r15
@@ -73,7 +70,7 @@ sched_switch:
     popq    %r12
     popq    %rbp
     popq    %rbx
-    retq                            /* retjrn into nexts context */
+    retq
 
 
 .global proc_resume_frame
@@ -97,3 +94,5 @@ proc_resume_frame:
     movq    %gs:CPU_USER_RSP, %rsp
     swapgs
     sysretq
+
+

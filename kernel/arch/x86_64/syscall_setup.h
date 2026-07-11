@@ -1,5 +1,6 @@
 #pragma once
 #include "mm/vmm.h"
+#include "percpu.h"
 #include <stdint.h>
 
 void syscall_init(void);

@@ -20,7 +20,10 @@ static void irq_handler(int irq, void *arg) {
     uio_dev_t *uio = (uio_dev_t *) arg;
     uio->irq_count++;
     pic_mask_irq((uint8_t) irq); /* driver re-enables via write() */
-    if (uio->waiter && uio->waiter->state == PROC_WAITING) uio->waiter->state = PROC_READY;
+    if (uio->waiter && uio->waiter->state == PROC_WAITING) {
+        uio->waiter->state = PROC_READY;
+        proc_set_ready(uio->waiter);
+    }
 }
 
 static int64_t uio_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {

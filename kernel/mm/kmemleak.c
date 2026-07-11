@@ -41,6 +41,8 @@ static int is_kernel_addr(void *p) {
     return v >= 0xffff800000000000ULL;
 }
 
+static int page_is_mapped(uint64_t virt);
+
 static void capture_backtrace(uint64_t *bt, int *depth) {
     struct frame {
         struct frame *rbp;
@@ -51,6 +53,9 @@ static void capture_backtrace(uint64_t *bt, int *depth) {
     int i = 0;
     while (i < KMEMLEAK_BT_DEPTH) {
         if (!fp || !is_kernel_addr(fp)) break;
+        if (!page_is_mapped((uint64_t) fp) ||
+            !page_is_mapped((uint64_t) fp + sizeof(struct frame)))
+            break;
         bt[i++] = fp->ret;
         fp = fp->rbp;
     }

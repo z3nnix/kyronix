@@ -1,4 +1,5 @@
 #include "unix_socket.h"
+#include "arch/x86_64/spinlock.h"
 #include "fs/pipe.h"
 #include "fs/vfs_internal.h"
 #include "inet_socket.h"
@@ -39,6 +40,7 @@ typedef struct {
     char path[108];
     unix_conn_t *backlog;
     proc_t *accept_waiter;
+    spinlock_t lock;
 } unix_sock_t;
 
 static struct {
@@ -167,9 +169,11 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     s->accept_waiter = g_current_proc;
     while (!s->backlog) sched_yield_blocking();
     s->accept_waiter = NULL;
+    spin_lock(&s->lock);
     unix_conn_t *conn = s->backlog;
     s->backlog = conn->next;
     f->node->sock_backlog--;
+    spin_unlock(&s->lock);
     pipe_t *srv_rx = conn->srv_rx;
     pipe_t *cli_rx = conn->cli_rx;
     uint32_t peer_pid = conn->peer_pid;
@@ -254,6 +258,7 @@ int fd_connect_unix(int fd, const char *path) {
     conn->peer_pid = g_current_proc ? g_current_proc->pid : 0;
     conn->peer_uid = g_current_proc ? g_current_proc->uid : 0;
     conn->peer_gid = g_current_proc ? g_current_proc->gid : 0;
+    spin_lock(&srv->lock);
     if (!srv->backlog) {
         srv->backlog = conn;
     } else {
@@ -262,8 +267,12 @@ int fd_connect_unix(int fd, const char *path) {
         tail->next = conn;
     }
     sn->sock_backlog++;
-    if (srv->accept_waiter && srv->accept_waiter->state == PROC_WAITING)
-        srv->accept_waiter->state = PROC_READY;
+    if (srv->accept_waiter) {
+        proc_t *w = srv->accept_waiter;
+        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(w);
+    }
+    spin_unlock(&srv->lock);
     vfs_node_unref_internal(sn);
     unix_sock_t *cs = (unix_sock_t *) f->node->data;
     kfree(cs);

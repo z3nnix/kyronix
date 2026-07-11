@@ -3,6 +3,7 @@
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/pit.h"
+#include "arch/x86_64/spinlock.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "crypto/chacha20.h"
 #include "epoll.h"
@@ -26,6 +27,7 @@
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
+#include "proc/smp.h"
 #include "socket.h"
 #include "time.h"
 
@@ -60,8 +62,6 @@
 #define ENOTCONN 107
 #define EISCONN 106
 #define EPROTONOSUPPORT 93
-
-vmm_space_t *g_current_space = NULL;
 
 static void cleartid_wake(uint32_t *addr);
 
@@ -408,8 +408,9 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
 
     child->kstack_rsp = (uint64_t) ksp;
     child->state = PROC_READY;
+    proc_set_ready(child);
 
-    log_info("[fork] parent=%u child=%u", parent->pid, child->pid);
+
     return (int64_t) child->pid;
 
 fail_fork:
@@ -418,6 +419,7 @@ fail_space:
     proc_kstack_free(child);
     kfree(child->fds);
     child->state = PROC_UNUSED;
+    proc_clear_used(child);
     return -(int64_t) ENOMEM;
 }
 
@@ -502,6 +504,7 @@ static int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, u
     memset(ksp, 0, 6 * 8);
     child->kstack_rsp = (uint64_t) ksp;
     child->state = PROC_READY;
+    proc_set_ready(child);
 
     log_info("[clone] parent=%u child=%u flags=0x%lx", parent->pid, child->pid, flags);
     return (int64_t) child->pid;
@@ -776,7 +779,7 @@ static int64_t sys_execve(const char *path, const char **uargv, const char **uen
     vmm_switch(p->space);
     vmm_space_free(old);
 
-    vfs_cloexec_flush(); /* close FD_CLOEXEC fds now that exec has commtted */
+    vfs_cloexec_flush();
 
     for (int i = 0; i < NSIG; i++) {
         if (p->sig_actions[i].sa_handler != SIG_IGN) {
@@ -830,10 +833,12 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
     jail_unref(p->jail_id);
     proc_release_fdtable(p);
 
+    spin_lock(&g_proctable_lock);
     for (int i = 0; i < PROC_MAX; i++) {
         proc_t *child = &g_proctable[i];
         if (child->state != PROC_UNUSED && child->ppid == p->pid) child->ppid = 1;
     }
+    spin_unlock(&g_proctable_lock);
 
     if (p->is_thread) {
         if (p->cleartid_addr) {
@@ -841,37 +846,56 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             cleartid_wake(p->cleartid_addr);
         }
         p->state = PROC_DYING;
+        proc_clear_ready(p);
         proc_defer_thread_reap(p);
-        proc_t *nt = proc_idle_until_ready(p);
-        nt->state = PROC_RUNNING;
-        vfs_set_fdtable(nt->fds);
-        g_current_space = nt->space;
-        cpu_set_kernel_stack(nt->kstack_top);
-        sched_switch(nt);
+        proc_t *nt = sched_claim_next(p);
+        if (nt) {
+            vfs_set_fdtable(nt->fds);
+            g_current_space = nt->space;
+            cpu_set_kernel_stack(nt->kstack_top);
+            sched_switch(nt);
+        }
         /* unreachable: this thread is dead and never scheduled again */
         cpu_halt();
     }
 
     p->exit_code = code;
     p->state = PROC_ZOMBIE;
+    proc_clear_ready(p);
 
     proc_t *parent = proc_find(p->ppid);
     if (parent && parent->state != PROC_UNUSED) {
         proc_send_signal(parent, SIGCHLD);
-        if (parent->state != PROC_RUNNING) {
-            parent->state = PROC_READY;
-            vfs_set_fdtable(parent->fds);
-            g_current_space = parent->space;
-            cpu_set_kernel_stack(parent->kstack_top);
-            sched_switch(parent);
-        }
+        proc_unref(parent);
     }
-    proc_t *any = proc_idle_until_ready(p);
-    any->state = PROC_RUNNING;
-    vfs_set_fdtable(any->fds);
-    g_current_space = any->space;
-    cpu_set_kernel_stack(any->kstack_top);
-    sched_switch(any);
+
+    /* Switch to this CPU's idle process, which will continue in ap_sched_loop.
+       We never sched_switch to the parent because its context may be live
+       on another CPU (never saved via sched_switch). */
+    uint32_t cpu_id = this_cpu_id();
+    proc_t *idle = (proc_t *) g_cpu_local[cpu_id].idle;
+    if (idle && idle->state == PROC_READY) {
+        idle->state = PROC_RUNNING;
+        vfs_set_fdtable(idle->fds);
+        g_current_space = idle->space;
+        cpu_set_kernel_stack(idle->kstack_top);
+        sched_switch(idle);
+        /* unreachable */
+    }
+
+    /* Fallback: find any READY process that isn't us or the parent */
+    for (;;) {
+        proc_t *next = sched_claim_next(p);
+        if (next) {
+            vfs_set_fdtable(next->fds);
+            g_current_space = next->space;
+            cpu_set_kernel_stack(next->kstack_top);
+            sched_switch(next);
+        }
+        sti();
+        hlt();
+        cli();
+    }
     cpu_halt(); /* unreachable */
 }
 
@@ -1026,78 +1050,87 @@ static int64_t sys_ptrace(int64_t request, int64_t pid, uint64_t addr, uint64_t 
     }
 
     proc_t *t = proc_find((uint32_t) pid);
-    if (!t || t->state == PROC_UNUSED) return -(int64_t) ESRCH;
+    if (!t || t->state == PROC_UNUSED) { if (t) proc_unref(t); return -(int64_t) ESRCH; }
+
+    int64_t rc = 0;
 
     if (request == PTRACE_ATTACH) {
-        if (t->tracer_pid) return -(int64_t) EPERM;
+        if (t->tracer_pid) { rc = -(int64_t) EPERM; goto out; }
         t->tracer_pid = self->pid;
         proc_send_signal(t, SIGSTOP);
-        if (t->state == PROC_WAITING) t->state = PROC_READY;
-        return 0;
+        goto out;
     }
 
-    if (t->tracer_pid != self->pid) return -(int64_t) ESRCH;
+    if (t->tracer_pid != self->pid) { rc = -(int64_t) ESRCH; goto out; }
 
     switch (request) {
     case PTRACE_PEEKTEXT:
     case PTRACE_PEEKDATA: {
         uint64_t val = 0;
-        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 0) < 0) return -(int64_t) EIO;
-        if (!uptr_ok_w((void *) data, sizeof(val))) return -(int64_t) EFAULT;
+        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 0) < 0) { rc = -(int64_t) EIO; goto out; }
+        if (!uptr_ok_w((void *) data, sizeof(val))) { rc = -(int64_t) EFAULT; goto out; }
         *(uint64_t *) data = val;
-        return 0;
+        break;
     }
     case PTRACE_POKETEXT:
     case PTRACE_POKEDATA: {
         uint64_t val = data;
-        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 1) < 0) return -(int64_t) EIO;
-        return 0;
+        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 1) < 0) { rc = -(int64_t) EIO; goto out; }
+        break;
     }
     case PTRACE_GETREGS: {
         struct ptrace_user_regs regs;
         ptrace_fill_regs(t, &regs);
-        if (!uptr_ok_w((void *) data, sizeof(regs))) return -(int64_t) EFAULT;
+        if (!uptr_ok_w((void *) data, sizeof(regs))) { rc = -(int64_t) EFAULT; goto out; }
         memcpy((void *) data, &regs, sizeof(regs));
-        return 0;
+        break;
     }
     case PTRACE_SETREGS: {
         struct ptrace_user_regs regs;
-        if (!uptr_ok((void *) data, sizeof(regs))) return -(int64_t) EFAULT;
+        if (!uptr_ok((void *) data, sizeof(regs))) { rc = -(int64_t) EFAULT; goto out; }
         memcpy(&regs, (void *) data, sizeof(regs));
-        if (ptrace_store_regs(t, &regs) < 0) return -(int64_t) EIO;
-        return 0;
+        if (ptrace_store_regs(t, &regs) < 0) { rc = -(int64_t) EIO; goto out; }
+        break;
     }
     case PTRACE_CONT:
     case PTRACE_SYSCALL:
     case PTRACE_SINGLESTEP:
-        if (!t->ptrace_stopped) return -(int64_t) ESRCH;
-        if ((int) data > 0 && (int) data < NSIG) t->pending_sigs |= (1ULL << ((int) data - 1));
+        if (!t->ptrace_stopped) { rc = -(int64_t) ESRCH; goto out; }
+        if ((int) data > 0 && (int) data < NSIG)
+            __atomic_fetch_or(&t->pending_sigs, (1ULL << ((int) data - 1)), __ATOMIC_RELAXED);
         t->ptrace_syscall_trace = (request == PTRACE_SYSCALL);
         t->ptrace_step = (request == PTRACE_SINGLESTEP);
         t->ptrace_stopped = 0;
         t->ptrace_reported = 0;
-        t->state = PROC_READY;
-        return 0;
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(t);
+        break;
     case PTRACE_KILL:
-        t->pending_sigs |= (1ULL << (SIGKILL - 1));
+        __atomic_fetch_or(&t->pending_sigs, (1ULL << (SIGKILL - 1)), __ATOMIC_RELAXED);
         t->ptrace_stopped = 0;
         t->ptrace_reported = 0;
-        t->state = PROC_READY;
-        return 0;
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(t);
+        break;
     case PTRACE_DETACH:
         t->tracer_pid = 0;
         t->ptrace_syscall_trace = 0;
         if (t->ptrace_stopped) {
             t->ptrace_stopped = 0;
             t->ptrace_reported = 0;
-            t->state = PROC_READY;
+            if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
+                proc_set_ready(t);
         }
-        return 0;
+        break;
     case PTRACE_SETOPTIONS:
-        return 0;
+        break;
     default:
-        return -(int64_t) EINVAL;
+        rc = -(int64_t) EINVAL;
+        break;
     }
+out:
+    proc_unref(t);
+    return rc;
 }
 
 static int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
@@ -1119,11 +1152,14 @@ static int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
             if (c->state == PROC_ZOMBIE) {
                 if (wstatus) *wstatus = (c->exit_code & 0xFF) << 8;
                 uint32_t cpid = c->pid;
+                spin_lock(&g_proctable_lock);
                 proc_release_fdtable(c);
                 vmm_space_free(c->space);
                 proc_kstack_free(c);
                 memset(c, 0, sizeof(*c));
                 c->state = PROC_UNUSED;
+                proc_clear_used(c);
+                spin_unlock(&g_proctable_lock);
                 return (int64_t) cpid;
             }
 
@@ -1139,27 +1175,7 @@ static int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
         if (options & 1) /* WNOHANG */
             return 0;
 
-        parent->state = PROC_WAITING;
-        proc_t *next = proc_next_ready(parent);
-        if (!next) {
-            sti();
-            hlt();
-            cli();
-            parent->state = PROC_RUNNING;
-            continue;
-        }
-
-        next->state = PROC_RUNNING;
-        vfs_set_fdtable(next->fds);
-        g_current_space = next->space;
-        cpu_set_kernel_stack(next->kstack_top);
-        /* IF=0 across the switch: keep current-proc/space updates atomic. */
-        sched_switch(next);
-
-        parent->state = PROC_RUNNING;
-        vfs_set_fdtable(parent->fds);
-        g_current_space = parent->space;
-        cpu_set_kernel_stack(parent->kstack_top);
+        sched_yield_blocking();
     }
 }
 
@@ -1202,7 +1218,7 @@ static int64_t sys_uname(struct utsname *buf) {
     memcpy(buf->sysname, "k9", 7);
     memcpy(buf->nodename, "kx", 2);
     memcpy(buf->release, KERNEL_VERSION, sizeof(KERNEL_VERSION));
-    memcpy(buf->version, "UP", 6);
+    memcpy(buf->version, "#1 SMP", 6);
     memcpy(buf->machine, "x86_64", 6);
     return 0;
 }
@@ -1387,8 +1403,10 @@ static int64_t sys_getpgrp(void) { return cur() ? (int64_t) cur()->pgid : 1; }
 static int64_t sys_getpgid(uint64_t pid) {
     if (pid == 0) return sys_getpgrp();
     proc_t *p = proc_find((uint32_t) pid);
-    if (!p || !jail_can_see(cur(), p)) return -(int64_t) ESRCH;
-    return (int64_t) p->pgid;
+    if (!p || !jail_can_see(cur(), p)) { if (p) proc_unref(p); return -(int64_t) ESRCH; }
+    int64_t pgid = (int64_t) p->pgid;
+    proc_unref(p);
+    return pgid;
 }
 static int64_t sys_setsid(void) {
     proc_t *p = cur();
@@ -1399,10 +1417,11 @@ static int64_t sys_setsid(void) {
 static int64_t sys_setpgid(uint64_t pid, uint64_t pgid) {
     proc_t *p = pid ? proc_find((uint32_t) pid) : cur();
     if (!p) return -(int64_t) ESRCH;
-    if (!jail_can_see(cur(), p)) return -(int64_t) ESRCH;
+    if (!jail_can_see(cur(), p)) { if (pid) proc_unref(p); return -(int64_t) ESRCH; }
     if (pgid == 0) pgid = p->pid;
-    if (pgid > PROC_MAX) return -(int64_t) EINVAL;
+    if (pgid > PROC_MAX) { if (pid) proc_unref(p); return -(int64_t) EINVAL; }
     p->pgid = (int) pgid;
+    if (pid) proc_unref(p);
     return 0;
 }
 static bool kill_permitted(const proc_t *sender, const proc_t *target) {
@@ -1421,10 +1440,16 @@ static int64_t sys_kill(int64_t pid, int sig) {
     if (pid > 0) {
         proc_t *target = proc_find((uint32_t) pid);
         if (!target) return -(int64_t) ESRCH;
-        if (!jail_can_see(self, target)) /* hide existence across jails */
+        if (!jail_can_see(self, target)) {
+            proc_unref(target);
             return -(int64_t) ESRCH;
-        if (!kill_permitted(self, target)) return -(int64_t) EPERM;
+        }
+        if (!kill_permitted(self, target)) {
+            proc_unref(target);
+            return -(int64_t) EPERM;
+        }
         if (sig) proc_send_signal(target, sig);
+        proc_unref(target);
     } else if (pid == -1) {
         for (int i = 0; i < PROC_MAX; i++) {
             if (g_proctable[i].state == PROC_UNUSED) continue;
@@ -1549,6 +1574,7 @@ static int64_t sys_pause(void) {
             continue;
         }
         p->state = PROC_WAITING;
+        proc_clear_ready(p);
         next->state = PROC_RUNNING;
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
@@ -1589,6 +1615,7 @@ static int64_t sys_rt_sigsuspend(const uint64_t *mask, uint64_t sigsetsize) {
             continue;
         }
         p->state = PROC_WAITING;
+        proc_clear_ready(p);
         next->state = PROC_RUNNING;
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
@@ -1659,14 +1686,19 @@ typedef struct {
 } futex_entry_t;
 
 static futex_entry_t g_futex_tab[FUTEX_MAX_WAITERS];
+static spinlock_t g_futex_lock;
 
 static void cleartid_wake(uint32_t *addr) {
+    spin_lock(&g_futex_lock);
     for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
         if (g_futex_tab[i].uaddr == addr && g_futex_tab[i].proc) {
-            g_futex_tab[i].proc->state = PROC_READY;
+            proc_t *w = g_futex_tab[i].proc;
+            if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+                proc_set_ready(w);
             g_futex_tab[i].proc = NULL;
         }
     }
+    spin_unlock(&g_futex_lock);
 }
 
 static int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t *uaddr2,
@@ -1678,21 +1710,24 @@ static int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, u
         if (*uaddr != val) return -(int64_t) EAGAIN;
         proc_t *p = cur();
         if (!p) return -(int64_t) EFAULT;
+        spin_lock(&g_futex_lock);
         int slot = -1;
         for (int i = 0; i < FUTEX_MAX_WAITERS; i++)
             if (!g_futex_tab[i].proc) {
                 slot = i;
                 break;
             }
-        if (slot < 0) return -(int64_t) ENOMEM;
+        if (slot < 0) { spin_unlock(&g_futex_lock); return -(int64_t) ENOMEM; }
         g_futex_tab[slot].uaddr = uaddr;
         g_futex_tab[slot].proc = p;
+        spin_unlock(&g_futex_lock);
         uint64_t deadline = 0;
         if (timeout) {
             uint64_t ms = ((uint64_t *) timeout)[0] * 1000 + ((uint64_t *) timeout)[1] / 1000000;
             if (ms) deadline = g_ticks + ms;
         }
         p->wakeup_tick = deadline;
+        if (deadline) proc_set_timer(p);
         while (g_futex_tab[slot].proc == p) {
             if (deadline && g_ticks >= deadline) break;
             if (proc_next_ready(p))
@@ -1705,22 +1740,27 @@ static int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, u
         }
         bool timed_out = deadline && g_ticks >= deadline;
         p->wakeup_tick = 0;
+        spin_lock(&g_futex_lock);
         if (g_futex_tab[slot].proc == p) g_futex_tab[slot].proc = NULL;
+        spin_unlock(&g_futex_lock);
         return timed_out ? -(int64_t) ETIMEDOUT : 0;
     }
     case FUTEX_WAKE: {
         proc_t *self = cur();
         int woken = 0;
+        spin_lock(&g_futex_lock);
         for (int i = 0; i < FUTEX_MAX_WAITERS && woken < (int) val; i++) {
             if (g_futex_tab[i].uaddr == uaddr && g_futex_tab[i].proc &&
                 (!self || g_futex_tab[i].proc->jail_id == self->jail_id)) {
-                g_futex_tab[i].proc->wakeup_tick = 0;
-                if (g_futex_tab[i].proc->state == PROC_WAITING)
-                    g_futex_tab[i].proc->state = PROC_READY;
+                proc_t *w = g_futex_tab[i].proc;
+                w->wakeup_tick = 0;
+                if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+                    proc_set_ready(w);
                 g_futex_tab[i].proc = NULL;
                 woken++;
             }
         }
+        spin_unlock(&g_futex_lock);
         return (int64_t) woken;
     }
     case FUTEX_REQUEUE:
@@ -1731,13 +1771,15 @@ static int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, u
         uint32_t nr_requeue = (uint32_t) (uint64_t) timeout; /* val2 rides in the timeout slot */
         proc_t *self = cur();
         int woken = 0, requeued = 0;
+        spin_lock(&g_futex_lock);
         for (int i = 0; i < FUTEX_MAX_WAITERS; i++) {
             if (g_futex_tab[i].uaddr != uaddr || !g_futex_tab[i].proc) continue;
             if (self && g_futex_tab[i].proc->jail_id != self->jail_id) continue;
             if ((uint32_t) woken < nr_wake) {
-                g_futex_tab[i].proc->wakeup_tick = 0;
-                if (g_futex_tab[i].proc->state == PROC_WAITING)
-                    g_futex_tab[i].proc->state = PROC_READY;
+                proc_t *w = g_futex_tab[i].proc;
+                w->wakeup_tick = 0;
+                if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+                    proc_set_ready(w);
                 g_futex_tab[i].proc = NULL;
                 woken++;
             } else if ((uint32_t) requeued < nr_requeue) {
@@ -1745,6 +1787,7 @@ static int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, u
                 requeued++;
             }
         }
+        spin_unlock(&g_futex_lock);
         return (int64_t) (woken + requeued);
     }
     default:
@@ -2171,10 +2214,10 @@ void syscall_dispatch(syscall_frame_t *f) {
         }
         ret = fd_pipe((int *) a1);
         break;
-    case 24:
-        sched_yield_blocking();
+    case 24: {
         ret = 0;
         break;
+    }
     case 53:
         if (!a4 || !uptr_ok_w((void *) a4, 2 * sizeof(int))) {
             ret = -(int64_t) EFAULT;
@@ -2521,6 +2564,7 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 124: {
         proc_t *_p = a1 ? proc_find((uint32_t) a1) : cur();
         ret = _p ? (int64_t) _p->pgid : -(int64_t) ESRCH;
+        if (a1 && _p) proc_unref(_p);
         break;
     }
     case 125:
@@ -2736,11 +2780,12 @@ void syscall_dispatch(syscall_frame_t *f) {
                 break;
             }
             memset((void *) a3, 0, sz);
-            *(uint8_t *) a3 = 1;
+            for (uint32_t i = 0; i < g_cpu_count && i < sz * 8; i++)
+                ((uint8_t *) a3)[i / 8] |= (uint8_t) (1 << (i % 8));
         }
         ret = 0;
         break;
-    } /* sched_getaffinity: 1 CPU */
+    } /* sched_getaffinity */
     case 213:
         ret = sys_epoll_create1(0);
         break; /* epoll_create */

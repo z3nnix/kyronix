@@ -8,6 +8,7 @@
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
+#include "../arch/x86_64/spinlock.h"
 #include "pci.h"
 
 #define PCI_CLASS_STORAGE 0x01
@@ -109,6 +110,7 @@ typedef struct {
     uint64_t disk_sectors;
     char disk_model[41];
     bool present;
+    spinlock_t lock;
 } ahci_port_t;
 
 static hba_mem_t *g_hba = NULL;
@@ -463,23 +465,26 @@ static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool writ
 int ahci_read(int port, uint64_t lba, uint32_t count, void *buf) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
+    spin_lock(&ap->lock);
     uint8_t *dst = (uint8_t *) buf;
     uint32_t rem = count;
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
-        if (do_command(ap, lba, batch, false) < 0) return -1;
+        if (do_command(ap, lba, batch, false) < 0) { spin_unlock(&ap->lock); return -1; }
         memcpy(dst, ap->dma_buf, batch * 512u);
         dst += batch * 512u;
         lba += batch;
         rem -= batch;
     }
+    spin_unlock(&ap->lock);
     return 0;
 }
 
 int ahci_flush(int port) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
+    spin_lock(&ap->lock);
     hba_port_t *p = ap->regs;
     hba_cmd_tbl_t *tbl = ap->cmdtbl;
     hba_cmd_hdr_t *hdr = &ap->cmdlist[0];
@@ -510,24 +515,28 @@ int ahci_flush(int port) {
     if (p->ci & 1u) {
         log_error("AHCI: flush timeout on port %d", port);
         port_comreset(p);
+        spin_unlock(&ap->lock);
         return -1;
     }
+    spin_unlock(&ap->lock);
     return 0;
 }
 
 int ahci_write(int port, uint64_t lba, uint32_t count, const void *buf) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
+    spin_lock(&ap->lock);
     const uint8_t *src = (const uint8_t *) buf;
     uint32_t rem = count;
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
         memcpy(ap->dma_buf, src, batch * 512u);
-        if (do_command(ap, lba, batch, true) < 0) return -1;
+        if (do_command(ap, lba, batch, true) < 0) { spin_unlock(&ap->lock); return -1; }
         src += batch * 512u;
         lba += batch;
         rem -= batch;
     }
+    spin_unlock(&ap->lock);
     return 0;
 }

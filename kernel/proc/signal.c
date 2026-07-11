@@ -28,9 +28,11 @@ void proc_send_signal(struct proc *p, int sig) {
     proc_t *pp = (proc_t *) p;
     if (!pp || pp->state == PROC_UNUSED) return;
 
-    pp->pending_sigs |= (1ULL << (sig - 1));
+    __atomic_fetch_or(&pp->pending_sigs, (1ULL << (sig - 1)), __ATOMIC_RELAXED);
 
-    if (pp->state == PROC_WAITING) pp->state = PROC_READY;
+    if (__sync_bool_compare_and_swap(&pp->state, PROC_WAITING, PROC_READY)) {
+        proc_set_ready(pp);
+    }
 }
 
 static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
@@ -116,13 +118,13 @@ void signal_check(syscall_frame_t *f) {
 
     tty_check_signals();
 
-    uint64_t pending = p->pending_sigs & ~p->sig_mask;
+    uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~p->sig_mask;
     if (!pending) return;
 
     int idx = __builtin_ctzll(pending);
     int sig = idx + 1;
 
-    p->pending_sigs &= ~(1ULL << idx);
+    __atomic_fetch_and(&p->pending_sigs, ~(1ULL << idx), __ATOMIC_RELAXED);
 
     if (p->tracer_pid && sig != SIGKILL) {
         proc_ptrace_stop(p, sig, 1, f, &f->r11);

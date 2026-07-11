@@ -132,6 +132,7 @@ typedef struct {
     volatile uint64_t counter;
     uint32_t semaphore;
     void *waiter;
+    spinlock_t lock;
 } eventfd_state_t;
 
 typedef struct {

@@ -2,9 +2,7 @@
 #include "cpu.h"
 #include "pic.h"
 
-#define PIT_CHANNEL0 0x40
-#define PIT_CMD 0x43
-#define PIT_DIVISOR 1193
+#define PIT_DIVISOR 4772
 
 volatile uint64_t g_ticks = 0;
 uint64_t g_epoch_base = 0;
@@ -29,7 +27,7 @@ static uint64_t rtc_read_unix(void) {
     uint8_t cen = cmos_read(0x32);
     uint8_t sb = cmos_read(0x0B);
 
-    if (!(sb & 0x04)) { /* BCD mode */
+    if (!(sb & 0x04)) {
         sec = bcd2bin(sec);
         min = bcd2bin(min);
         hr = bcd2bin(hr & 0x7f) | (hr & 0x80);
@@ -38,15 +36,13 @@ static uint64_t rtc_read_unix(void) {
         yr = bcd2bin(yr);
         cen = bcd2bin(cen);
     }
-    if (!(sb & 0x02) && (hr & 0x80)) /* 12h PM */
+    if (!(sb & 0x02) && (hr & 0x80))
         hr = (uint8_t) (((hr & 0x7fu) % 12u) + 12u);
 
     uint32_t year = (uint32_t) (cen ? cen * 100u : 2000u) + yr;
 
-    /* days since 1970-01-01 */
     static const uint16_t mdays[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
     uint32_t y = year - 1970;
-    /* leap years from 1970 to year-1 */
     uint32_t ly =
         (year - 1) / 4 - (year - 1) / 100 + (year - 1) / 400 - (1969 / 4 - 1969 / 100 + 1969 / 400);
     int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
@@ -57,7 +53,7 @@ static uint64_t rtc_read_unix(void) {
 }
 
 void pit_init(void) {
-    outb(PIT_CMD, 0x36); /* channel 0, lo/hi, mode 2 (rate gen), binary */
+    outb(PIT_CMD, 0x36);
     outb(PIT_CHANNEL0, (uint8_t) (PIT_DIVISOR & 0xFF));
     outb(PIT_CHANNEL0, (uint8_t) (PIT_DIVISOR >> 8));
     g_epoch_base = rtc_read_unix();

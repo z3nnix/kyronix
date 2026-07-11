@@ -1,5 +1,6 @@
 #include "eventfd.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "fs/vfs_internal.h"
 #include "mm/heap.h"
 #include "proc/proc.h"
@@ -16,6 +17,7 @@ int fd_eventfd(uint32_t initval, int eflags) {
     if (!e) return -(int) ENOMEM;
     e->counter = initval;
     e->semaphore = !!(eflags & 1);
+    e->lock.lock = 0;
 
     int fd = vfs_fd_alloc_from(0);
     if (fd < 0) {
@@ -38,10 +40,27 @@ int fd_eventfd(uint32_t initval, int eflags) {
 int64_t eventfd_read(vfs_file_t *f, char *buf, uint64_t len) {
     if (len < 8) return -(int) EINVAL;
     eventfd_state_t *e = f->efd;
-    while (e->counter == 0) {
-        if (f->flags & O_NONBLOCK) return -(int) EAGAIN;
+
+    for (;;) {
+        spin_lock(&e->lock);
+        if (e->counter != 0) {
+            uint64_t val;
+            if (e->semaphore) {
+                val = 1;
+                e->counter--;
+            } else {
+                val = e->counter;
+                e->counter = 0;
+            }
+            spin_unlock(&e->lock);
+            __builtin_memcpy(buf, &val, 8);
+            return 8;
+        }
+        if (f->flags & O_NONBLOCK) { spin_unlock(&e->lock); return -(int) EAGAIN; }
         proc_t *p = g_current_proc;
         e->waiter = p;
+        spin_unlock(&e->lock);
+
         if (p) {
             if (proc_next_ready(p))
                 sched_yield_blocking();
@@ -51,18 +70,10 @@ int64_t eventfd_read(vfs_file_t *f, char *buf, uint64_t len) {
                 cli();
             }
         }
+        spin_lock(&e->lock);
         e->waiter = NULL;
+        spin_unlock(&e->lock);
     }
-    uint64_t val;
-    if (e->semaphore) {
-        val = 1;
-        e->counter--;
-    } else {
-        val = e->counter;
-        e->counter = 0;
-    }
-    __builtin_memcpy(buf, &val, 8);
-    return 8;
 }
 
 int64_t eventfd_write(vfs_file_t *f, const char *buf, uint64_t len) {
@@ -71,12 +82,16 @@ int64_t eventfd_write(vfs_file_t *f, const char *buf, uint64_t len) {
     __builtin_memcpy(&val, buf, 8);
     if (val == (uint64_t) -1) return -(int) EINVAL;
     eventfd_state_t *e = f->efd;
+
+    spin_lock(&e->lock);
     e->counter += val;
     if (e->waiter) {
         proc_t *w = (proc_t *) e->waiter;
-        if (w->state == PROC_WAITING) w->state = PROC_READY;
+        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+            proc_set_ready(w);
         e->waiter = NULL;
     }
+    spin_unlock(&e->lock);
     return 8;
 }
 

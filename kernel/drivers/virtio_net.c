@@ -6,6 +6,7 @@
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../net/net.h"
+#include "../arch/x86_64/spinlock.h"
 #include "pci.h"
 
 #define REG_DEVFEAT 0x00u
@@ -77,6 +78,8 @@ static uint16_t g_iobase;
 static uint8_t g_mac[6];
 static virtq_t g_rxq, g_txq;
 static bool g_ready;
+static spinlock_irqsave_t g_rxq_lock;
+static spinlock_irqsave_t g_txq_lock;
 
 #define RX_PREQUEUE 32u
 static uint64_t g_rx_phys[RX_PREQUEUE];
@@ -163,7 +166,7 @@ const uint8_t *virtnet_mac(void) { return g_mac; }
 
 void virtnet_poll(void) {
     if (!g_ready) return;
-    uint64_t flags = irq_save();
+    spin_lock_irqsave(&g_rxq_lock);
     while (g_rxq.last_used != g_rxq.used->idx) {
         uint16_t ui = g_rxq.last_used % g_rxq.size;
         vq_elem_t e = g_rxq.used->ring[ui];
@@ -180,18 +183,18 @@ void virtnet_poll(void) {
 
         rx_post_buf(di, g_rxq.desc[di].addr); /* repost buffer */
     }
-    irq_restore(flags);
+    spin_unlock_irqrestore(&g_rxq_lock);
 }
 
 bool virtnet_send(const uint8_t *data, uint16_t len) {
     if (!g_ready || len > 1514u) return false;
 
-    uint64_t flags = irq_save();
+    spin_lock_irqsave(&g_txq_lock);
     while (g_txq.last_used != g_txq.used->idx) g_txq.last_used++;
 
     uint16_t outstanding = (uint16_t) (g_txq.next_free - g_txq.last_used);
     if (outstanding >= g_tx_nslots) {
-        irq_restore(flags);
+        spin_unlock_irqrestore(&g_txq_lock);
         return false;
     }
 
@@ -208,7 +211,7 @@ bool virtnet_send(const uint8_t *data, uint16_t len) {
     vq_kick(&g_txq, di, 1);
     g_txq.next_free++;
 
-    irq_restore(flags);
+    spin_unlock_irqrestore(&g_txq_lock);
     return true;
 }
 

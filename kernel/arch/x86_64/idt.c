@@ -1,4 +1,5 @@
 #include "idt.h"
+#include "arch/x86_64/lapic.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "drivers/fb.h"
 #include "exec/process.h"
@@ -13,11 +14,12 @@
 #include "pit.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
+#include "proc/smp.h"
 #include "syscall/syscall.h"
 
 #define IDT_INT_GATE 0x8E
 #define IDT_TRAP_GATE 0x8F
-#define IDT_USER_GATE 0xEE /* DPL=3: int 0x80 callable from ring 3 */
+#define IDT_USER_GATE 0xEE
 
 static idt_entry_t g_idt[256] __attribute__((aligned(16)));
 
@@ -49,6 +51,11 @@ static void idt_set_gate(uint8_t vec, uint64_t handler, uint8_t type) {
     };
 }
 
+static struct {
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed)) g_idtr;
+
 void idt_init(void) {
     pic_remap(32, 40);
     pic_mask_all();
@@ -63,14 +70,16 @@ void idt_init(void) {
 
     idt_set_gate(0x80, isr_stub_table[48], IDT_USER_GATE);
 
-    struct {
-        uint16_t limit;
-        uint64_t base;
-    } __attribute__((packed)) idtr = {
-        .limit = (uint16_t) (sizeof(g_idt) - 1),
-        .base = (uint64_t) g_idt,
-    };
-    __asm__ volatile("lidt %0" ::"m"(idtr) : "memory");
+    idt_set_gate(LAPIC_TIMER_VEC, isr_stub_table[49], IDT_INT_GATE);
+    idt_set_gate(LAPIC_SPURIOUS_VEC, isr_stub_table[50], IDT_INT_GATE);
+
+    g_idtr.limit = (uint16_t) (sizeof(g_idt) - 1);
+    g_idtr.base  = (uint64_t) g_idt;
+    __asm__ volatile("lidt %0" ::"m"(g_idtr) : "memory");
+}
+
+void idt_load_ap(void) {
+    __asm__ volatile("lidt %0" ::"m"(g_idtr) : "memory");
 }
 
 static const char *const exc_name[] = {
@@ -161,16 +170,13 @@ static int exception_signal(uint64_t n) {
     return (n < 32) ? exc_sig[n] : SIGSEGV;
 }
 
-/* print return addrs on the faulting kstack*/
 #define KTEXT_LO 0xffffffff80000000ULL
 #define KTEXT_HI 0xffffffff80040000ULL
 
 static void kernel_backtrace(uint64_t sp) {
     static volatile int in_bt = 0;
-    if (in_bt) return; /* dont recurse if the scan itself faults */
+    if (in_bt) return;
     in_bt = 1;
-
-    /* scan only this procs mapped kstack so we never touch the guard page */
     if (g_current_proc && g_current_proc->kstack_guard) {
         uint64_t lo = g_current_proc->kstack_guard + 0x1000;
         uint64_t top = g_current_proc->kstack_top;
@@ -193,7 +199,6 @@ void isr_dispatch(cpu_state_t *state) {
     uint64_t n = state->int_no;
 
     if (n < 32) {
-        /* user-mode exception: kill the process, dont halt the kernel */
         if ((state->cs & 3) == 3 && g_current_proc) {
             int sig = exception_signal(n);
             if (n == 14) {
@@ -253,34 +258,48 @@ void isr_dispatch(cpu_state_t *state) {
         if (irq == 0) {
             g_ticks++;
             fb_cursor_blink_tick(g_ticks);
-            proc_reap_pending(); /* free a dead threads kstack off its own stack */
+            proc_reap_pending();
             net_poll();
             pic_send_eoi(0);
-            for (int i = 0; i < PROC_MAX; i++) {
+            uint64_t timer_mask = __atomic_load_n(&g_timer_mask, __ATOMIC_RELAXED);
+            uint64_t tm = timer_mask;
+            while (tm) {
+                int i = __builtin_ctzll(tm);
                 proc_t *pc = &g_proctable[i];
-                if (pc->state == PROC_UNUSED) continue;
                 if (pc->wakeup_tick && g_ticks >= pc->wakeup_tick) {
                     pc->wakeup_tick = 0;
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
+                    if (__sync_bool_compare_and_swap(&pc->state, PROC_WAITING, PROC_READY))
+                        proc_set_ready(pc);
                 }
                 if (pc->alarm_tick && g_ticks >= pc->alarm_tick) {
                     pc->alarm_tick = 0;
                     proc_send_signal(pc, SIGALRM);
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
                 }
                 if (pc->itimer_next_tick && g_ticks >= pc->itimer_next_tick) {
                     pc->itimer_next_tick =
                         pc->itimer_interval_ms ? pc->itimer_next_tick + pc->itimer_interval_ms : 0;
                     proc_send_signal(pc, SIGALRM);
-                    if (pc->state == PROC_WAITING) pc->state = PROC_READY;
                 }
+                tm &= tm - 1;
             }
+            /* rebuild: clear bits for processes with no pending timers */
+            tm = timer_mask;
+            uint64_t still_active = 0;
+            while (tm) {
+                int b = __builtin_ctzll(tm);
+                proc_t *pt = &g_proctable[b];
+                if (pt->wakeup_tick || pt->alarm_tick || pt->itimer_next_tick)
+                    still_active |= (1ULL << b);
+                tm &= tm - 1;
+            }
+            if (still_active != timer_mask)
+                __atomic_store_n(&g_timer_mask, still_active, __ATOMIC_RELAXED);
             if ((state->cs & 3) == 3 && g_current_proc) {
                 proc_t *p = g_current_proc;
-                proc_t *next = proc_next_ready(p);
+                proc_t *next = sched_claim_next(p);
                 if (next) {
                     p->state = PROC_READY;
-                    next->state = PROC_RUNNING;
+                    proc_set_ready(p);
                     vfs_set_fdtable(next->fds);
                     g_current_space = next->space;
                     cpu_set_kernel_stack(next->kstack_top);
@@ -295,6 +314,26 @@ void isr_dispatch(cpu_state_t *state) {
             irq_handler_t *h = &g_irq_handlers[irq];
             if (h->fn) h->fn((int) irq, h->arg);
             pic_send_eoi(irq);
+        }
+    } else if (n == LAPIC_SPURIOUS_VEC) {
+        return;
+    } else if (n == LAPIC_TIMER_VEC) {
+        lapic_eoi();
+        if ((state->cs & 3) == 3 && g_current_proc) {
+            proc_t *p = g_current_proc;
+            proc_t *next = sched_claim_next(p);
+            if (next) {
+                p->state = PROC_READY;
+                proc_set_ready(p);
+                vfs_set_fdtable(next->fds);
+                g_current_space = next->space;
+                cpu_set_kernel_stack(next->kstack_top);
+                sched_switch(next);
+                p->state = PROC_RUNNING;
+                vfs_set_fdtable(p->fds);
+                g_current_space = p->space;
+                cpu_set_kernel_stack(p->kstack_top);
+            }
         }
     }
 }

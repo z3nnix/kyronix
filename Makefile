@@ -71,6 +71,7 @@ SRCS := \
     kernel/kernel.c                    \
     kernel/arch/x86_64/gdt.c          \
     kernel/arch/x86_64/idt.c          \
+    kernel/arch/x86_64/lapic.c        \
     kernel/arch/x86_64/pit.c          \
     kernel/mm/pmm.c                   \
     kernel/mm/vmm.c                   \
@@ -89,6 +90,7 @@ SRCS := \
     kernel/proc/proc.c                 \
     kernel/proc/jail.c                 \
     kernel/proc/signal.c               \
+    kernel/proc/smp.c                  \
     kernel/fs/ext2.c                   \
     kernel/fs/vfs.c                    \
     kernel/fs/devfs.c                  \
@@ -152,6 +154,7 @@ ASM_SRCS := \
     kernel/arch/x86_64/idt_stubs.S    \
     kernel/arch/x86_64/syscall_entry.S \
     kernel/proc/sched.S                \
+    kernel/proc/ap_trampoline.S        \
     kernel/drivers/psf_font.S
 
 OBJS := $(SRCS:%.c=$(BUILD_DIR)/%.o) $(ASM_SRCS:%.S=$(BUILD_DIR)/%.o)
@@ -326,6 +329,7 @@ run:
 	    -M q35                      \
 	    -enable-kvm                 \
 	    -cpu host                   \
+	    -smp 4                      \
 	    -m 2G                       \
 	    -cdrom $(ISO)               \
 	    -boot d                     \
@@ -341,6 +345,7 @@ run:
 run-serial:
 	qemu-system-x86_64              \
 	    -M q35                      \
+	    -smp 4                      \
 	    -m 2G                       \
 	    -cdrom $(ISO)               \
 	    -boot d                     \
@@ -355,6 +360,7 @@ run-disk:
 	    -M q35                      \
 	    -enable-kvm                 \
 	    -cpu host                   \
+	    -smp 4                      \
 	    -m 2G                       \
 	    -drive file=$(DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
 	    -device ahci,id=ahci \
@@ -400,6 +406,7 @@ live-run:
 	    -M q35                      \
 	    -enable-kvm                 \
 	    -cpu host                   \
+	    -smp 4                      \
 	    -m 2G                       \
 	    -cdrom $(LIVE_ISO)          \
 	    -boot d                     \
@@ -412,6 +419,7 @@ live: live-iso
 run-uefi:
 	qemu-system-x86_64              \
 	    -M q35                      \
+	    -smp 4                      \
 	    -m 2G                       \
 	    -cdrom $(ISO)               \
 	    -bios $(OVMF)               \
@@ -487,6 +495,7 @@ test-run: $(TEST_DISK_IMG)
 	qemu-system-x86_64              \
 	    -M q35                      \
 	    -m 512M                     \
+	    -smp 4                      \
 	    -cdrom $(TEST_ISO)          \
 	    -display none               \
 	    -serial stdio               \
@@ -501,6 +510,7 @@ test-run-log: $(TEST_DISK_IMG)
 	@qemu-system-x86_64              \
 	    -M q35                      \
 	    -m 512M                     \
+	    -smp 4                      \
 	    -cdrom $(TEST_ISO)          \
 	    -device isa-debug-exit,iobase=0x501 \
 	    -display none               \

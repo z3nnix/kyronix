@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "arch/x86_64/spinlock.h"
 
 #define PIPE_BUFSZ 65536
 #define PIPE_ANC_SLOTS 8
@@ -14,6 +15,7 @@ typedef struct {
 
 typedef struct {
     uint64_t magic;
+    spinlock_t lock;
     uint8_t buf[PIPE_BUFSZ];
     uint32_t rpos;
     uint32_t count;
