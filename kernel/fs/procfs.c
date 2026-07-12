@@ -324,15 +324,17 @@ static int64_t proc_devices_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
 
 static int64_t proc_pids_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
-    char tmp[2048];
+    char tmp[4096];
     int pos = 0;
     for (int i = 0; i < PROC_MAX; i++) {
         proc_t *p = &g_proctable[i];
         if (p->state == PROC_UNUSED) continue;
         if (!jail_can_see(g_current_proc, p)) continue;
         const char *name = p->exe_path[0] ? p->exe_path : "unknown";
-        int n = snprintf(tmp + pos, sizeof(tmp) - (uint64_t) pos, "%u %u %c %u %s\n", p->pid,
-                         p->ppid, proc_state_char(p), p->uid, name);
+        uint64_t pages = p->pages_alloc > p->pages_freed ? p->pages_alloc - p->pages_freed : 0;
+        uint64_t mem_kb = pages * (PAGE_SIZE / 1024);
+        int n = snprintf(tmp + pos, sizeof(tmp) - (uint64_t) pos, "%u %u %c %u %lu %s\n", p->pid,
+                         p->ppid, proc_state_char(p), p->uid, mem_kb, name);
         if (n < 0 || (uint64_t) pos + (uint64_t) n >= sizeof(tmp)) break;
         pos += n;
     }
