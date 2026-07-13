@@ -28,6 +28,12 @@ void proc_send_signal(struct proc *p, int sig) {
     proc_t *pp = (proc_t *) p;
     if (!pp || pp->state == PROC_UNUSED) return;
 
+    if (pp->job_stopped && (sig == SIGCONT || sig == SIGKILL)) {
+        pp->job_stopped = 0;
+        pp->state = PROC_READY;
+        proc_set_ready(pp);
+    }
+
     __atomic_fetch_or(&pp->pending_sigs, (1ULL << (sig - 1)), __ATOMIC_RELAXED);
 
     if (__sync_bool_compare_and_swap(&pp->state, PROC_WAITING, PROC_READY)) {
@@ -96,6 +102,11 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
 
 static void deliver_signal(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t handler = p->sig_actions[sig - 1].sa_handler;
+
+    if (sig == SIGSTOP || (sig == SIGTSTP && handler == SIG_DFL)) {
+        proc_job_stop(p, sig);
+        return;
+    }
 
     if (handler == SIG_IGN) return;
 

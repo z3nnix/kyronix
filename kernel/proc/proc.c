@@ -350,3 +350,34 @@ void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t 
     g_current_space = p->space;
     cpu_set_kernel_stack(p->kstack_top);
 }
+
+void proc_job_stop(proc_t *p, int sig) {
+    p->stop_sig = (uint8_t) sig;
+    p->stop_reported = 0;
+    p->job_stopped = 1;
+    p->state = PROC_STOPPED;
+    proc_clear_ready(p);
+
+    proc_t *parent = proc_find(p->ppid);
+    if (parent && parent->state != PROC_UNUSED) {
+        proc_send_signal(parent, SIGCHLD);
+        if (parent->state == PROC_WAITING) {
+            parent->state = PROC_READY;
+            proc_set_ready(parent);
+        }
+        proc_unref(parent);
+    }
+
+    while (p->job_stopped) {
+        sched_yield_blocking();
+        if (p->job_stopped) {
+            p->state = PROC_STOPPED;
+            proc_clear_ready(p);
+        }
+    }
+
+    p->state = PROC_RUNNING;
+    vfs_set_fdtable(p->fds);
+    g_current_space = p->space;
+    cpu_set_kernel_stack(p->kstack_top);
+}

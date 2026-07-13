@@ -10,6 +10,10 @@
 #define VEOF 4
 #define VTIME 5
 #define VMIN 6
+#define VSWTC 7
+#define VSTART 8
+#define VSTOP 9
+#define VSUSP 10
 
 /* c_iflag bits */
 #define IGNBRK 0000001
