@@ -1,0 +1,5 @@
+name = "tcc"
+version = "0.9.28rc"
+description = "Tiny C Compiler"
+arch = "x86-64"
+os = ["linux-compatible"]

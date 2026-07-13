@@ -50,6 +50,10 @@ typedef struct {
 static job_t g_jobs[MAX_JOBS];
 static int g_job_seq = 0;
 
+#define MAX_POSITIONAL 32
+static char *g_positional[MAX_POSITIONAL];
+static int g_npositional = 0;
+
 static void expand_env(char *buf, size_t size) {
     char tmp[MAX_LINE];
     size_t pos = 0;
@@ -69,7 +73,13 @@ static void expand_env(char *buf, size_t size) {
             while (*p && ni < 63 && (isalnum(*p) || *p == '_')) { name[ni++] = *p++; } name[ni] = '\0';
             if (brace && *p == '}') p++;
             if (ni) {
-                const char *val = getenv(name);
+                const char *val = NULL;
+                if (isdigit((unsigned char)name[0])) {
+                    int idx = atoi(name) - 1;
+                    if (idx >= 0 && idx < g_npositional) val = g_positional[idx];
+                } else {
+                    val = getenv(name);
+                }
                 if (val) {
                     size_t vlen = strlen(val);
                     size_t rem = size - pos - 1;
@@ -1100,7 +1110,20 @@ static int run_command(int argc, char **argv) {
         if (argc == 0) return 0;
     }
 
+    /* handle VAR=value assignment */
+    if (argc == 1) {
+        char *eq = strchr(argv[0], '=');
+        if (eq > argv[0]) {
+            *eq = '\0';
+            setenv(argv[0], eq + 1, 1);
+            *eq = '=';
+            return 0;
+        }
+    }
+
     if (strcmp(argv[0], "exit") == 0) exit(argc > 1 ? atoi(argv[1]) : 0);
+
+    if (strcmp(argv[0], "set") == 0) return 0;
 
     if (strcmp(argv[0], "help") == 0) {
         print_help();
@@ -1494,7 +1517,11 @@ static int run_if_block(FILE *f, const char *cond_line, int outer_status) {
     return status;
 }
 
-static int run_script(const char *path) {
+static int run_script(const char *path, int script_argc, char **script_argv) {
+    g_npositional = 0;
+    for (int i = 0; i < script_argc && i < MAX_POSITIONAL; i++)
+        g_positional[g_npositional++] = script_argv[i];
+
     FILE *file = fopen(path, "r");
     if (file == NULL) {
         perror(path);
@@ -1597,7 +1624,7 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        if (script_arg) return run_script(argv[script_arg]);
+        if (script_arg) return run_script(argv[script_arg], argc - script_arg - 1, argv + script_arg + 1);
     }
 
     puts("");

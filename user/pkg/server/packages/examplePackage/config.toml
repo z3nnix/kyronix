@@ -1,0 +1,5 @@
+name = "examplePackage"
+version = "1.0.0"
+description = "Example package for the K9 package manager"
+arch = "x86-64"
+os = ["linux-compatible"]
