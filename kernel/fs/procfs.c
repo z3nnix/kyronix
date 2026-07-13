@@ -40,6 +40,7 @@ static const char *proc_name(proc_t *p) {
 
 static char proc_state_char(proc_t *p) {
     if (!p) return 'R';
+    if (p->job_stopped) return 'T';
     switch (p->state) {
     case PROC_RUNNING:
         return 'R';
@@ -49,6 +50,8 @@ static char proc_state_char(proc_t *p) {
         return 'S';
     case PROC_ZOMBIE:
         return 'Z';
+    case PROC_STOPPED:
+        return 'T';
     default:
         return 'I';
     }

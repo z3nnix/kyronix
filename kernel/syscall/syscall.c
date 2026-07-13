@@ -1168,6 +1168,12 @@ static int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
                 if (wstatus) *wstatus = ((c->ptrace_stop_sig & 0xFF) << 8) | 0x7f;
                 return (int64_t) c->pid;
             }
+
+            if ((options & 2) /* WUNTRACED */ && c->job_stopped && !c->stop_reported) {
+                c->stop_reported = 1;
+                if (wstatus) *wstatus = ((c->stop_sig & 0xFF) << 8) | 0x7f;
+                return (int64_t) c->pid;
+            }
         }
 
         if (!any_child) return -(int64_t) ECHILD;

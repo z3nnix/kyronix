@@ -12,6 +12,7 @@
 #define PROC_WAITING 3
 #define PROC_ZOMBIE 4
 #define PROC_DYING 5
+#define PROC_STOPPED 6
 
 #define PROC_MAX 64
 #define KSTACK_PAGES 16
@@ -76,6 +77,11 @@ typedef struct proc {
     void *ptrace_frame;          /* frame the tracee is stopped in, valid while stopped */
     uint64_t ptrace_orig_rax;    /* syscall nr as of entry; rax itself gets clobbered by the
                                    * return value before an exit-stop can report it */
+
+    uint8_t stop_sig;      /* job-control (SIGTSTP/SIGSTOP) stop signal, valid while PROC_STOPPED */
+    uint8_t stop_reported; /* this stop was already handed back via wait4(WUNTRACED) */
+    uint8_t job_stopped;   /* loop condition for proc_job_stop(); state alone can't be used since
+                             * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
@@ -140,6 +146,7 @@ proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void));
 void proc_kstack_free(proc_t *p);
 void proc_defer_thread_reap(proc_t *p);
 void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t *rflags_slot);
+void proc_job_stop(proc_t *p, int sig);
 void proc_reap_pending(void);
 proc_t *proc_find(uint32_t pid);
 proc_t *proc_next_ready(proc_t *skip);

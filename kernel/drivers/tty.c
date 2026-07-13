@@ -28,6 +28,7 @@ static struct termios_s tty_termios = {
         [VERASE] = 0x7F, /* DEL */
         [VKILL] = 0x15,  /* Ctrl-U */
         [VEOF] = 0x04,   /* Ctrl-D */
+        [VSUSP] = 0x1A,  /* Ctrl-Z */
         [VMIN] = 1,
         [VTIME] = 0,
     },
@@ -71,6 +72,8 @@ static void tty_input_char(uint8_t c) {
             sig = SIGINT;
         else if (c == tty_termios.c_cc[VQUIT])
             sig = SIGQUIT;
+        else if (c == tty_termios.c_cc[VSUSP])
+            sig = SIGTSTP;
 
         if (sig) {
             tty_putchar('^');
