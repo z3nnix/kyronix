@@ -5,8 +5,10 @@
 
 #include "pkg.h"
 
-void log_info(const char *tag, const char *fmt, ...);
-void log_ok(const char *fmt, ...);
+void log_info(const char *fmt, ...);
+void log_step(const char *step, const char *fmt, ...);
+void log_done(const char *fmt, ...);
+void log_warn(const char *fmt, ...);
 void dief(const char *fmt, ...);
 
 const char *home_dir(void);
@@ -19,5 +21,6 @@ int starts_with(const char *s, const char *p);
 void trim_crlf(char *s);
 void ensure_dir(const char *path);
 int run_cmd(char *const argv[]);
+int run_cmd_in(const char *dir, char *const argv[]);
 
 #endif

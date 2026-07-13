@@ -441,13 +441,11 @@ test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
 	$(MAKE) -C user/fetch
 	$(MAKE) -C user/shell
 	$(MAKE) -C user/extras
-	$(MAKE) -C user/pkg/client
 	@mkdir -p $(@D)
 	rm -rf $(TEST_ROOTFS) $(TEST_INITRD)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt
 	cp build/bin/testrunner $(TEST_ROOTFS)/init
 	cp build/bin/ksh        $(TEST_ROOTFS)/bin/
-	cp build/bin/pkg        $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
 	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
 	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \

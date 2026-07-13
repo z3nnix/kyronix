@@ -15,27 +15,45 @@
 
 #include "pkg.h"
 
-void log_info(const char *tag, const char *fmt, ...) {
+void log_info(const char *fmt, ...) {
     va_list ap;
-    fprintf(stdout, "%s[%s]%s ", ANSI_BLUE, tag, ANSI_RESET);
+    va_start(ap, fmt);
+    fprintf(stdout, "  ");
+    vfprintf(stdout, fmt, ap);
+    va_end(ap);
+    fputc('\n', stdout);
+}
+
+void log_step(const char *step, const char *fmt, ...) {
+    va_list ap;
+    fprintf(stdout, "%s=>%s %s%s%s ", ANSI_CYAN, ANSI_RESET, ANSI_BOLD, step, ANSI_RESET);
     va_start(ap, fmt);
     vfprintf(stdout, fmt, ap);
     va_end(ap);
     fputc('\n', stdout);
 }
 
-void log_ok(const char *fmt, ...) {
+void log_done(const char *fmt, ...) {
     va_list ap;
-    fprintf(stdout, "%s%s[ok]%s ", ANSI_GREEN, ANSI_BOLD, ANSI_RESET);
+    fprintf(stdout, "%s[*]%s ", ANSI_GREEN, ANSI_RESET);
     va_start(ap, fmt);
     vfprintf(stdout, fmt, ap);
     va_end(ap);
     fputc('\n', stdout);
+}
+
+void log_warn(const char *fmt, ...) {
+    va_list ap;
+    fprintf(stderr, "%s[!]%s ", ANSI_YELLOW, ANSI_RESET);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
 }
 
 void dief(const char *fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s%s[err]%s ", ANSI_RED, ANSI_BOLD, ANSI_RESET);
+    fprintf(stderr, "%s%serror:%s ", ANSI_RED, ANSI_BOLD, ANSI_RESET);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -113,7 +131,7 @@ void set_endpoint(const char *endpoint) {
     if (write_text_file(path, endpoint) != 0) {
         dief("failed to store endpoint");
     }
-    log_ok("endpoint set");
+    log_done("registry set to %s", endpoint);
 }
 
 int starts_with(const char *s, const char *p) {
@@ -135,6 +153,20 @@ int run_cmd(char *const argv[]) {
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    int st = 0;
+    if (waitpid(pid, &st, 0) < 0) return -1;
+    if (WIFEXITED(st) && WEXITSTATUS(st) == 0) return 0;
+    return -1;
+}
+
+int run_cmd_in(const char *dir, char *const argv[]) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        if (dir && chdir(dir) != 0) _exit(1);
         execvp(argv[0], argv);
         _exit(127);
     }
