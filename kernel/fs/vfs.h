@@ -95,6 +95,7 @@ struct filesystem {
     bool (*check_root)(struct block_device *);
     bool (*mount)(struct block_device *, const char *);
     int (*sync)(void);
+    int (*create)(struct vfs_node *node, const char *path, uint32_t mode);
 };
 
 typedef struct vfs_node {

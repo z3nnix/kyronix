@@ -382,9 +382,11 @@ vfs_node_t *vfs_mkdir_p(const char *path, uint32_t mode) {
 }
 
 static vfs_node_t *parent_of(const char *path, const char **leaf) {
+    size_t len = strlen(path);
+    while (len > 1 && path[len - 1] == '/') len--;
     const char *slash = NULL;
-    for (const char *p = path; *p; p++)
-        if (*p == '/') slash = p;
+    for (size_t i = 0; i < len; i++)
+        if (path[i] == '/') slash = path + i;
     if (!slash || slash == path) {
         *leaf = path + (path[0] == '/' ? 1 : 0);
         return lookup_ref(g_root);
@@ -1101,6 +1103,11 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot) {
         node_unref(parent);
         n = vfs_create_file(lpath, mode, NULL, 0);
         if (!n) return -(int) ENOMEM;
+        for (int i = 0; i < g_filesystem_cnt; i++) {
+            if (g_filesystems[i]->create &&
+                g_filesystems[i]->create(n, lpath, mode) == 0)
+                break;
+        }
         node_ref(n); /* ref for the fd; create_file returns unrefed node */
     } else {
         if ((flags & O_CREAT) && (flags & O_EXCL)) {

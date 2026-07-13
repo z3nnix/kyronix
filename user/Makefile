@@ -10,6 +10,7 @@ all:
 	$(MAKE) -C kyrobox
 	$(MAKE) -C fetch
 	$(MAKE) -C pipes
+	$(MAKE) -C pkg/client
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	cp ../build/bin/ksh $(ROOTFS)/bin/
@@ -17,14 +18,16 @@ all:
 	cp ../build/bin/vi $(ROOTFS)/bin/
 	cp ../build/bin/fetch $(ROOTFS)/bin/
 	cp ../build/bin/make $(ROOTFS)/bin/
+	cp ../build/bin/pkg $(ROOTFS)/bin/
 	cp ../build/bin/pipes $(ROOTFS)/usr/bin/
 	ln -sf ksh $(ROOTFS)/bin/sh
 	for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
-	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup patch ping printenv printf ps pwd readlink reboot rm rmdir \
-	    sed seq sleep sort sync tail tee test top touch tr true tty uname uniq unlink wc wget which whoami yes; do \
+	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
+	    sed seq sleep sort sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes; do \
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
 	done
 	ln -sf test $(ROOTFS)/bin/[
+	$(MAKE) -C extras install
 
 clean:
 	$(MAKE) -C init clean
@@ -34,6 +37,8 @@ clean:
 	$(MAKE) -C kyrobox clean
 	$(MAKE) -C fetch clean
 	$(MAKE) -C pipes clean
+	$(MAKE) -C pkg/client clean
+	$(MAKE) -C extras clean
 	# keep st and cwm as blobs
 	for f in $(ROOTFS)/bin/*; do \
 	    case "$$(basename $$f)" in st|cwm) ;; *) rm -f "$$f";; esac; \

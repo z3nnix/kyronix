@@ -440,6 +440,7 @@ test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
 	$(MAKE) -C user/kyrobox
 	$(MAKE) -C user/fetch
 	$(MAKE) -C user/shell
+	$(MAKE) -C user/extras
 	@mkdir -p $(@D)
 	rm -rf $(TEST_ROOTFS) $(TEST_INITRD)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt
@@ -450,6 +451,13 @@ test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
 	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
 	    sed seq sleep sort sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes; do \
 	    cp build/bin/$$app $(TEST_ROOTFS)/bin/; \
+	done
+	for bin in busybox tar gzip gunzip bzip2 bunzip2 xz unxz md5sum sha256sum install patch; do \
+	    if [ -L build/bin/$$bin ]; then \
+	        cp -P build/bin/$$bin $(TEST_ROOTFS)/bin/; \
+	    elif [ -f build/bin/$$bin ]; then \
+	        cp build/bin/$$bin $(TEST_ROOTFS)/bin/; \
+	    fi; \
 	done
 	cp build/bin/fetch     $(TEST_ROOTFS)/bin/
 	cp build/bin/make      $(TEST_ROOTFS)/bin/
