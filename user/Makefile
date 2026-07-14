@@ -25,6 +25,8 @@ all:
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
 	done
 	ln -sf test $(ROOTFS)/bin/[
+	ln -sf reboot $(ROOTFS)/bin/poweroff
+	ln -sf reboot $(ROOTFS)/bin/halt
 
 clean:
 	$(MAKE) -C init clean
