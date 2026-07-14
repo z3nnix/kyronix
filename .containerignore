@@ -1,0 +1,10 @@
+build/
+dist/
+.git/
+*.o
+*.iso
+*.img
+*.cpio
+iso_root/
+test_rootfs/
+.claude/
