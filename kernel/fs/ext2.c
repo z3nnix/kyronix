@@ -1374,11 +1374,31 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
     return true;
 }
 
+static int ext2_fs_create(vfs_node_t *n, const char *path, uint32_t mode) {
+    (void) mode;
+    if (!g_dev || !g_mount_point || !path) return -1;
+
+    uint32_t parent_ino;
+    const char *childname;
+    if (resolve_parent(path, &parent_ino, &childname) < 0 || !*childname) return -1;
+
+    ext2_create(path, (uint16_t)(n->mode & 07777u), NULL, 0);
+
+    uint32_t ino_nr = ext2_lookup(parent_ino, childname);
+    if (!ino_nr) return -1;
+
+    n->fs_ops     = &ext2_reg_ops;
+    n->fs_private = (void *)(uintptr_t) ino_nr;
+    track_node(ino_nr, n);
+    return 0;
+}
+
 static struct filesystem ext2_fs = {
     .name       = "ext2",
     .check_root = ext2_check_root,
     .mount      = ext2_mount,
     .sync       = ext2_sync,
+    .create     = ext2_fs_create,
 };
 
 void ext2_init(void) {
