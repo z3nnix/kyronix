@@ -27,6 +27,8 @@ all:
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
 	done
 	ln -sf test $(ROOTFS)/bin/[
+	ln -sf reboot $(ROOTFS)/bin/poweroff
+	ln -sf reboot $(ROOTFS)/bin/halt
 	$(MAKE) -C extras install
 
 clean:

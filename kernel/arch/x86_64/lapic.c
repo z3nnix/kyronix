@@ -93,12 +93,7 @@ static inline uint16_t pit_read_counter(void) {
     return (uint16_t) lo | ((uint16_t) hi << 8);
 }
 
-/*
- * Calibrate LAPIC timer against the PIT.
- * PIT runs at 1.193182 MHz with divisor 1193 → ~1000 Hz.
- * We set LAPIC timer to max count, wait for 5 PIT wraps (~5ms),
- * then read the remaining count to compute frequency.
- */
+// calibrate lapic
 void lapic_calibrate_timer(void) {
     if (!g_lapic) return;
 

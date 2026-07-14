@@ -25,17 +25,15 @@
 #define LAPIC_TIMER_CCUR  0x390
 #define LAPIC_TIMER_DIV  0x3E0
 
-/* LVT masks/modes */
+// lvt masks and nodss
 #define LAPIC_LVT_MASKED    (1 << 16)
 #define LAPIC_TIMER_PERIODIC (1 << 17)
 #define LAPIC_TIMER_ONESHOT  (0 << 17)
 #define LAPIC_TIMER_TSC_DEADLINE (1 << 19)
 
-/* SVR bitfields */
 #define LAPIC_SVR_ENABLE   (1 << 8)
 #define LAPIC_SVR_FOCUS    (1 << 9)
 
-/* ICR delivery modes (bits 8-10) */
 #define ICR_FIXED          0
 #define ICR_LOWEST_PRI     (1 << 8)
 #define ICR_SMI            (2 << 8)
@@ -44,25 +42,22 @@
 #define ICR_STARTUP        (6 << 8)
 #define ICR_EXTINT         (7 << 8)
 
-/* ICR destination modes (bit 11) */
 #define ICR_DEST_PHYSICAL  (0 << 11)
 #define ICR_DEST_LOGICAL   (1 << 11)
 
-/* ICR status (bits 12, 14) */
 #define ICR_SEND_PENDING   (1 << 12)
 
-/* ICR destination shorthand (bits 18-19) */
 #define ICR_DEST_SELF      (1 << 18)
 #define ICR_DEST_ALL       (2 << 18)
 #define ICR_DEST_OTHERS    (3 << 18)
 
-/* Spurious interrupt vector */
+// inter-pt vector
 #define LAPIC_SPURIOUS_VEC 0xFF
 
-/* LAPIC timer vector */
+// timer vector
 #define LAPIC_TIMER_VEC    0xE0
 
-/* MSRs */
+// msrs
 #define IA32_APIC_BASE     0x0000001B
 #define IA32_APIC_BASE_ENABLE (1 << 11)
 #define IA32_APIC_BASE_X2APIC   (1 << 10)

@@ -14,6 +14,7 @@
 #include "drivers/fb.h"
 
 #include "crypto/chacha20.h"
+#include "drivers/acpi.h"
 #include "drivers/ahci.h"
 #include "drivers/block.h"
 #include "drivers/fbdev.h"
@@ -75,6 +76,12 @@ static volatile struct limine_module_request mod_req = {
     .response = NULL,
     .internal_module_count = 0,
     .internal_modules = NULL,
+};
+
+static volatile struct limine_rsdp_request rsdp_req = {
+    .id = LIMINE_RSDP_REQUEST,
+    .revision = 0,
+    .response = NULL,
 };
 
 LIMINE_REQUESTS_END_MARKER;
@@ -197,6 +204,9 @@ void kmain(void) {
     }
     pci_enumerate();
     kstatus("Enumerating PCI", true);
+    /* Limine base revision >= 3 reports the RSDP as a physical address. */
+    acpi_init(rsdp_req.response ? (uint64_t) rsdp_req.response->address : 0);
+    kstatus("Initialising ACPI", acpi_available());
     block_init();
     ahci_init();
     kstatus("Initialising AHCI", ahci_ready());

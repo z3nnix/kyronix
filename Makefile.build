@@ -80,6 +80,14 @@ SRCS := \
     kernel/mm/shm.c                   \
     kernel/arch/x86_64/syscall_setup.c \
     kernel/syscall/syscall.c          \
+    kernel/syscall/mem.c              \
+    kernel/syscall/ptrace.c           \
+    kernel/syscall/futex.c            \
+    kernel/syscall/jailsys.c          \
+    kernel/syscall/cred.c             \
+    kernel/syscall/fsops.c            \
+    kernel/syscall/sig.c              \
+    kernel/syscall/procctl.c          \
     kernel/syscall/epoll.c            \
     kernel/syscall/file.c             \
     kernel/syscall/poll.c             \
@@ -111,6 +119,7 @@ SRCS := \
     kernel/drivers/tty.c              \
     kernel/drivers/fb.c               \
     kernel/drivers/pci.c              \
+    kernel/drivers/acpi.c             \
     kernel/drivers/virtio_net.c       \
     kernel/net/net.c                  \
     kernel/net/lwip_glue.c            \
