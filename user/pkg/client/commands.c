@@ -148,11 +148,25 @@ static int get_installed_version(const char *name, char *ver, size_t ver_sz) {
     return ver[0] ? 0 : -1;
 }
 
+/*
+ * Manifest helpers for reverse dependency tracking.
+ *
+ * Local manifest format (~/.pkg/installed/{name}/manifest):
+ *   name=... version=... description=... arch=... install_dir=...
+ *   depends=pkg1,pkg2           ← forward: what this package needs
+ *   required_by=pkg3,pkg4       ← reverse: who needs this package
+ *
+ * Both fields are comma-separated (no spaces around commas).
+ * An empty value means no dependencies / no dependents.
+ */
+
 static void local_manifest_path(char *out, size_t n, const char *name) {
     const char *home = home_dir();
     snprintf(out, n, "%s/.pkg/installed/%s/manifest", home, name);
 }
 
+/* Generic field reader: reads key=value from manifest, writes value into out.
+ * Returns 0 on success, -1 if key not found. */
 static int manifest_read_field(const char *name, const char *key, char *out, size_t out_sz) {
     char path[1024];
     local_manifest_path(path, sizeof(path), name);
@@ -182,6 +196,7 @@ static int manifest_read_field(const char *name, const char *key, char *out, siz
     return -1;
 }
 
+/* Read comma-separated list field into array. Returns count. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 static int manifest_read_list(const char *name, const char *key, char items[][128], int max) {
@@ -196,6 +211,7 @@ static int manifest_read_list(const char *name, const char *key, char items[][12
         if (!*p) break;
         char *end = strchr(p, ',');
         size_t nlen = end ? (size_t)(end - p) : strlen(p);
+        /* trim spaces */
         while (nlen > 0 && p[0] == ' ') { p++; nlen--; }
         while (nlen > 0 && p[nlen-1] == ' ') nlen--;
         if (nlen >= 128) nlen = 127;
@@ -207,10 +223,15 @@ static int manifest_read_list(const char *name, const char *key, char items[][12
     return count;
 }
 
+/*
+ * Rewrite a manifest field in-place. Reads the whole manifest, replaces the
+ * key=value line, writes it back. Creates the field if it doesn't exist.
+ */
 static void manifest_write_field(const char *name, const char *key, const char *value) {
     char path[1024];
     local_manifest_path(path, sizeof(path), name);
 
+    /* read existing manifest */
     size_t len = 0;
     char *txt = read_file(path, &len);
     char new_content[8192];
@@ -227,6 +248,7 @@ static void manifest_write_field(const char *name, const char *key, const char *
             size_t llen = eol ? (size_t)(eol - line) : strlen(line);
 
             if (strncmp(line, needle, strlen(needle)) == 0) {
+                /* replace this line */
                 char entry[512];
                 snprintf(entry, sizeof(entry), "%s=%s\n", key, value);
                 strcat(new_content, entry);
@@ -251,10 +273,12 @@ static void manifest_write_field(const char *name, const char *key, const char *
     write_text_file(path, new_content);
 }
 
+/* Add a name to a comma-separated list field (no duplicates). */
 static void manifest_list_add(const char *name, const char *key, const char *item) {
     char items[MAX_DEPS][128];
     int count = manifest_read_list(name, key, items, MAX_DEPS);
 
+    /* check for duplicates */
     for (int i = 0; i < count; i++) {
         if (strcmp(items[i], item) == 0) return;
     }
@@ -264,6 +288,7 @@ static void manifest_list_add(const char *name, const char *key, const char *ite
     snprintf(items[count], sizeof(items[count]), "%s", item);
     count++;
 
+    /* rebuild comma-separated string */
     char val[4096] = "";
     for (int i = 0; i < count; i++) {
         if (i > 0) strcat(val, ",");
@@ -272,6 +297,7 @@ static void manifest_list_add(const char *name, const char *key, const char *ite
     manifest_write_field(name, key, val);
 }
 
+/* Remove a name from a comma-separated list field. */
 static void manifest_list_remove(const char *name, const char *key, const char *item) {
     char items[MAX_DEPS][128];
     int count = manifest_read_list(name, key, items, MAX_DEPS);
@@ -296,6 +322,13 @@ static void manifest_list_remove(const char *name, const char *key, const char *
 #pragma GCC diagnostic pop
 
 
+
+/*
+ * Simple version comparison: "1.2.3" vs "1.2.4"
+ * Returns -1 if a < b, 0 if equal, 1 if a > b.
+ * Non-numeric segments compared lexicographically.
+ * Used for future version constraint enforcement in dependency resolution.
+ */
 __attribute__((unused))
 static int version_compare(const char *a, const char *b) {
     while (*a || *b) {
@@ -622,21 +655,25 @@ static int do_install(const char *name, const char *endpoint, long download_size
         fprintf(mf, "description=%s\n", pkg.description);
         fprintf(mf, "arch=%s\n", pkg.arch);
         fprintf(mf, "install_dir=%s\n", install_dir);
+        /* write forward dependencies */
         fprintf(mf, "depends=");
         for (int i = 0; i < pkg.depends_count; i++)
             fprintf(mf, "%s%s", i > 0 ? "," : "", pkg.depends[i]);
         fprintf(mf, "\n");
+        /* write reverse: requested_by */
         fprintf(mf, "required_by=%s\n", requested_by ? requested_by : "");
         fprintf(mf, "explicit=%d\n", explicit);
         fclose(mf);
     }
 
+    /* update required_by for each dependency that's already installed */
     for (int i = 0; i < pkg.depends_count; i++) {
         if (is_installed(pkg.depends[i])) {
             manifest_list_add(pkg.depends[i], "required_by", name);
         }
     }
 
+    /* => installed to /path */
     fprintf(stdout, "%s=>%s installed to %s%s%s\n", ANSI_CYAN, ANSI_RESET, ANSI_DIM, install_dir, ANSI_RESET);
     fprintf(stdout, "%s[*]%s %s %sinstalled%s\n", ANSI_GREEN, ANSI_RESET, pkg.name, ANSI_GREEN, ANSI_RESET);
 
@@ -827,6 +864,7 @@ void cmd_get(const char *name) {
     fprintf(stdout, "\n");
 
     for (int i = 0; i < count; i++) {
+        /* top-level package is last in list; deps get top-level name as requester */
         const char *req = (i < count - 1) ? name : NULL;
         int expl = (i == count - 1) ? 1 : 0;
         do_install(install_list[i].name, install_list[i].endpoint, install_list[i].download_size, req, expl);
@@ -914,6 +952,7 @@ void cmd_remove(const char *name) {
         dief("package '%s' is not installed", name);
     }
 
+    /* check reverse dependencies: refuse if other packages depend on this one */
     char rb_items[MAX_DEPS][128];
     int rb_count = manifest_read_list(name, "required_by", rb_items, MAX_DEPS);
     if (rb_count > 0) {
@@ -924,6 +963,7 @@ void cmd_remove(const char *name) {
         return;
     }
 
+    /* read this package's forward dependencies */
     char deps[MAX_DEPS][128];
     int dep_count = manifest_read_list(name, "depends", deps, MAX_DEPS);
 
@@ -954,15 +994,18 @@ void cmd_remove(const char *name) {
         fclose(f);
     }
 
+    /* remove this package from each dependency's required_by */
     for (int i = 0; i < dep_count; i++) {
         manifest_list_remove(deps[i], "required_by", name);
     }
 
+    /* delete the package registration directory */
     char *rm_argv[] = { "rm", "-rf", reg_dir, NULL };
     run_cmd(rm_argv);
 
     log_done("removed %s (%d file%s deleted)", name, removed, removed == 1 ? "" : "s");
 
+    /* scan for orphaned dependencies and suggest autoremove */
     char orphans[32][256];
     int orphan_count = 0;
 
@@ -973,10 +1016,11 @@ void cmd_remove(const char *name) {
         struct dirent *ent;
         while ((ent = readdir(d)) != NULL) {
             if (ent->d_name[0] == '.') continue;
-            if (strcmp(ent->d_name, name) == 0) continue;
+            if (strcmp(ent->d_name, name) == 0) continue; /* skip the one we just removed */
             char items[MAX_DEPS][128];
             int cnt = manifest_read_list(ent->d_name, "required_by", items, MAX_DEPS);
             if (cnt == 0 && orphan_count < 32) {
+                /* check if this package has deps itself (i.e. it's a leaf dependency) */
                 char d_items[MAX_DEPS][128];
                 int dc = manifest_read_list(ent->d_name, "depends", d_items, MAX_DEPS);
                 if (dc > 0) {
@@ -1001,6 +1045,7 @@ void cmd_autoremove(void) {
     char installed_dir[512];
     snprintf(installed_dir, sizeof(installed_dir), "%s/.pkg/installed", home);
 
+    /* first pass: collect orphan candidates */
     char orphans[64][256];
     int orphan_count = 0;
 
@@ -1015,6 +1060,7 @@ void cmd_autoremove(void) {
         if (ent->d_name[0] == '.') continue;
         char items[MAX_DEPS][128];
         int cnt = manifest_read_list(ent->d_name, "required_by", items, MAX_DEPS);
+        /* only auto-installed packages with no dependents are orphan candidates */
         if (cnt == 0 && orphan_count < 64) {
             char expl_val[16] = "";
             manifest_read_field(ent->d_name, "explicit", expl_val, sizeof(expl_val));
@@ -1036,6 +1082,7 @@ void cmd_autoremove(void) {
         fprintf(stdout, "    - %s\n", orphans[i]);
     fprintf(stdout, "\n");
 
+    /* prompt (skip if -y/--yes) */
     fprintf(stdout, "  Do you want to remove them? [Y/n] ");
     fflush(stdout);
 
@@ -1051,6 +1098,7 @@ void cmd_autoremove(void) {
     }
     fprintf(stdout, "\n");
 
+    /* second pass: remove orphans (iterate until no more orphans found) */
     int total_removed = 0;
     int changed = 1;
     while (changed) {
@@ -1068,14 +1116,17 @@ void cmd_autoremove(void) {
             manifest_read_field(ent->d_name, "explicit", expl_val, sizeof(expl_val));
             if (strcmp(expl_val, "1") == 0) continue;
 
+            /* orphan found: remove it */
             fprintf(stdout, "  %s=>%s removing %s%s%s\n", ANSI_CYAN, ANSI_RESET, ANSI_BOLD, ent->d_name, ANSI_RESET);
 
+            /* read its deps and remove this package from their required_by */
             char deps[MAX_DEPS][128];
             int dep_count = manifest_read_list(ent->d_name, "depends", deps, MAX_DEPS);
             for (int i = 0; i < dep_count; i++) {
                 manifest_list_remove(deps[i], "required_by", ent->d_name);
             }
 
+            /* delete files */
             char pkg_dir[1024];
             snprintf(pkg_dir, sizeof(pkg_dir), "%s/%s", installed_dir, ent->d_name);
 

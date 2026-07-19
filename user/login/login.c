@@ -1,5 +1,4 @@
-#define _POSIX_C_SOURCE 200809
-#include <crypt.h>
+#define _XOPEN_SOURCE 700
 #include <ctype.h>
 #include <fcntl.h>
 #include <pwd.h>

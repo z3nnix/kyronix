@@ -25,5 +25,6 @@ void chacha20_encrypt(struct chacha20_ctx *ctx, uint8_t *data, size_t len);
 
 void chacha20_rng_init(struct chacha20_rng *rng, const uint8_t seed[32]);
 void chacha20_rng_bytes(struct chacha20_rng *rng, uint8_t *buf, size_t len);
+void chacha20_rng_mix(struct chacha20_rng *rng, const uint8_t *data, size_t len);
 
 extern struct chacha20_rng g_chacha20_rng;

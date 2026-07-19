@@ -117,11 +117,13 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* autoremove */
     if (strcmp(cmd, "autoremove") == 0 || strcmp(cmd, "clean") == 0) {
         cmd_autoremove();
         return 0;
     }
 
+    /* version */
     if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0) {
         fprintf(stdout, "kx-pkg %s\n", PKG_VERSION);
         return 0;
