@@ -28,6 +28,7 @@
 static void expand_env(char *buf, size_t size);
 static int split_line(char *line, char **argv);
 static int run_line_logic(char *input);
+static int run_script(const char *path, int script_argc, char **script_argv);
 
 #define SEG_FIRST 0
 #define SEG_AND 1
@@ -980,6 +981,7 @@ static void print_help(void) {
     puts("  alias [name[=value]...]  - Define/list aliases");
     puts("  bg [job]                 - Resume job in background");
     puts("  cd [dir]                 - Change directory (default: HOME)");
+    puts("  . source file [args...] - Run script in current shell context");
     puts("  exec [cmd [args...]]     - Replace shell with external command");
     puts("  exit [n]                 - Exit the shell (with status n)");
     puts("  export [name[=value]...] - Set/export environment variables");
@@ -1260,6 +1262,14 @@ static int run_command(int argc, char **argv) {
         kill(-j->pgid, SIGCONT);
         printf("[%d]+ %s &\n", j->id, j->cmd);
         return 0;
+    }
+
+    if (strcmp(argv[0], ".") == 0 || strcmp(argv[0], "source") == 0) {
+        if (argc < 2) {
+            fprintf(stderr, "%s: missing filename\n", argv[0]);
+            return 2;
+        }
+        return run_script(argv[1], argc - 2, argv + 2);
     }
 
     if (strcmp(argv[0], "cd") == 0) {
