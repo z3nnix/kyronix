@@ -75,13 +75,10 @@ int main(int argc, char **argv) {
     verbose_mode = has_flag(argc - 2, argv + 2, "-verbose") || has_flag(argc - 2, argv + 2, "--verbose");
     yes_mode = has_flag(argc - 2, argv + 2, "-y") || has_flag(argc - 2, argv + 2, "--yes");
 
-    /* repo subcommand: pkg repo <show|add|remove|ping> [args...] */
     if (strcmp(cmd, "repo") == 0) {
         const char *subcmd = (argc > 2) ? argv[2] : NULL;
-        /* join remaining args after subcmd into a single string for "repo add name url" */
         const char *arg = NULL;
         if (argc > 3) {
-            /* find where non-flag args start after subcmd */
             static char argbuf[2048];
             argbuf[0] = '\0';
             for (int i = 3; i < argc; i++) {
@@ -95,7 +92,6 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* install: pkg install <package> */
     if (strcmp(cmd, "install") == 0 || strcmp(cmd, "get") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
@@ -106,7 +102,6 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* remove: pkg remove <package> */
     if (strcmp(cmd, "remove") == 0 || strcmp(cmd, "rm") == 0 || strcmp(cmd, "uninstall") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
@@ -117,7 +112,6 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* list */
     if (strcmp(cmd, "list") == 0 || strcmp(cmd, "ls") == 0) {
         cmd_list();
         return 0;
@@ -135,7 +129,6 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* help */
     if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0) {
         usage();
         return 0;

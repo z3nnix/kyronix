@@ -20,13 +20,11 @@ void ensure_dir(const char *path);
 int run_cmd(char *const argv[]);
 int run_cmd_in(const char *dir, char *const argv[]);
 
-/* INI repository configuration */
 int read_repos(RepoConfig *repos, int max);
 void write_repos(const RepoConfig *repos, int count);
 void add_repo(const char *name, const char *url, int priority);
 void remove_repo(const char *name);
 
-/* Disk space */
 long disk_available(const char *path);
 
 #endif
