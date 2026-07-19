@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "http.h"
 
 #include <arpa/inet.h>
@@ -24,7 +26,8 @@ static void parse_http_url(const char *url, char *host, size_t host_n, int *port
 
     if (colon && (!slash || colon < slash)) {
         snprintf(host, host_n, "%.*s", (int)(colon - p), p);
-        *port = atoi(colon + 1);
+        /* manual atoi to avoid musl C23 linkage issues */
+        { const char *np = colon + 1; int nv = 0; while (*np >= '0' && *np <= '9') { nv = nv * 10 + (*np - '0'); np++; } *port = nv; }
         if (slash) snprintf(path, path_n, "%s", slash);
         else snprintf(path, path_n, "/");
     } else {
@@ -116,25 +119,51 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
     close(fd);
     buf[len] = '\0';
 
-    unsigned char *hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
+    unsigned char *hdr_end = NULL;
+    /* Some servers/proxies use \n only instead of \r\n — handle both */
+    hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
+    if (!hdr_end) {
+        hdr_end = (unsigned char *)strstr((char *)buf, "\n\n");
+        if (hdr_end) hdr_end += 1; /* point at second \n */
+    }
     if (!hdr_end) {
         free(buf);
-        dief("invalid http response");
+        if (status_code) *status_code = 0;
+        if (body_len) *body_len = 0;
+        return NULL;
     }
 
+    /* find end of first line (status line) */
     unsigned char *status_line_end = (unsigned char *)strstr((char *)buf, "\r\n");
+    if (!status_line_end || status_line_end > hdr_end)
+        status_line_end = (unsigned char *)strstr((char *)buf, "\n");
     if (!status_line_end) {
         free(buf);
-        dief("invalid http response");
+        if (status_code) *status_code = 0;
+        if (body_len) *body_len = 0;
+        return NULL;
     }
     char status_line[128];
     snprintf(status_line, sizeof(status_line), "%.*s", (int)(status_line_end - buf), buf);
 
+    /* parse "HTTP/x.y NNN" to extract status code */
     int code = 0;
-    sscanf(status_line, "HTTP/%*s %d", &code);
+    {
+        const char *sp = status_line;
+        while (*sp && *sp != ' ') sp++;
+        if (*sp == ' ') {
+            sp++;
+            while (*sp >= '0' && *sp <= '9') { code = code * 10 + (*sp - '0'); sp++; }
+        }
+    }
     if (status_code) *status_code = code;
 
-    size_t header_len = (size_t)(hdr_end - buf) + 4;
+    size_t header_len = (size_t)(hdr_end - buf);
+    /* account for the 2 or 4 byte header terminator */
+    if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
+        header_len += 4;
+    else
+        header_len += 2; /* \n\n */
     size_t raw_len = len - header_len;
     unsigned char *body = (unsigned char *)malloc(raw_len + 1);
     if (!body) {
@@ -152,6 +181,7 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
 char *http_get_body(const char *url, int *status_code) {
     size_t body_len = 0;
     unsigned char *raw = http_get_body_raw(url, status_code, &body_len);
+    if (!raw) return NULL;
     char *text = (char *)malloc(body_len + 1);
     if (!text) {
         free(raw);
@@ -176,7 +206,12 @@ static long parse_content_length(const unsigned char *headers) {
         if (match) {
             p += nlen;
             while (*p == ' ') p++;
-            return atol(p);
+            /* manual atol to avoid musl C23 linkage issues */
+            long lv = 0;
+            int lneg = 1;
+            if (*p == '-') { lneg = -1; p++; }
+            while (*p >= '0' && *p <= '9') { lv = lv * 10 + (*p - '0'); p++; }
+            return lv * lneg;
         }
         while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
@@ -250,22 +285,36 @@ int http_download(const char *url, const char *dest, const char *label) {
         if (rd <= 0) { free(hdr_buf); close(fd); return -1; }
         hdr_len += (size_t)rd;
         hdr_buf[hdr_len] = '\0';
+        /* try standard \r\n\r\n, then fall back to \n\n */
         hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\r\n\r\n");
+        if (!hdr_end)
+            hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\n\n");
     }
 
     int code = 0;
     {
+        /* find end of first line (status line), handle both \r\n and \n */
         unsigned char *sl = (unsigned char *)strstr((char *)hdr_buf, "\r\n");
+        if (!sl || sl > hdr_end)
+            sl = (unsigned char *)strstr((char *)hdr_buf, "\n");
         if (sl) {
-            char status_line[128];
-            snprintf(status_line, sizeof(status_line), "%.*s", (int)(sl - hdr_buf), hdr_buf);
-            sscanf(status_line, "HTTP/%*s %d", &code);
+            /* parse "HTTP/x.y NNN" to extract status code */
+            const char *sp = (const char *)hdr_buf;
+            while (*sp && *sp != ' ') sp++;
+            if (*sp == ' ') {
+                sp++;
+                while (*sp >= '0' && *sp <= '9') { code = code * 10 + (*sp - '0'); sp++; }
+            }
         }
     }
 
     long content_length = parse_content_length(hdr_buf);
 
-    size_t header_bytes = (size_t)(hdr_end - hdr_buf) + 4;
+    size_t header_bytes = (size_t)(hdr_end - hdr_buf);
+    if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
+        header_bytes += 4;
+    else
+        header_bytes += 2; /* \n\n */
     size_t initial_body = hdr_len - header_bytes;
 
     if (code != 200) {

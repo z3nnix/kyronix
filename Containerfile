@@ -1,4 +1,4 @@
-FROM alpine:3.20
+FROM docker.io/alpine:3.20
 
 RUN apk add --no-cache \
     gcc g++ make binutils \
@@ -11,6 +11,7 @@ RUN apk add --no-cache \
     xorriso \
     autoconf automake libtool \
     pkgconfig \
+    texinfo \
     gawk \
     curl wget tar \
     bash coreutils findutils \

@@ -24,19 +24,38 @@ static const char *first_nonflag(int argc, char **argv) {
 static void usage(void) {
     fprintf(stderr,
         "%skx-pkg%s - package manager for kyronix. %sv" PKG_VERSION "%s\n\n"
+
         "%sUsage:%s\n"
-        "  %spkg get%s <package>      install a package\n"
-        "  %spkg list%s               list installed packages\n"
-        "  %spkg remove%s <package>   uninstall a package\n"
-        "  %spkg health%s             check registry status\n"
-        "  %spkg set%s <url>          set registry endpoint\n"
+        "  %spkg install%s <package>       Install a package\n"
+        "  %spkg remove%s <package>        Uninstall a package\n"
+        "  %spkg list%s                    List installed packages\n"
+        "\n"
+        "%sRepository:%s\n"
+        "  %spkg repo show%s               Show configured repositories\n"
+        "  %spkg repo add%s <name> <url>   Add or update a repository\n"
+        "  %spkg repo remove%s <name>      Remove a repository\n"
+        "  %spkg repo ping%s               Check repository availability\n"
+        "\n"
+        "%sOptions:%s\n"
+        "  %s-v, --verbose%s               Verbose output\n"
+        "  %s-h, --help%s                  Show this help\n"
         "\n",
+
         ANSI_CYAN, ANSI_RESET,
         ANSI_DIM, ANSI_RESET,
+
         ANSI_BOLD, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
+
+        ANSI_BOLD, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
+
+        ANSI_BOLD, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET
     );
@@ -51,22 +70,28 @@ int main(int argc, char **argv) {
     const char *cmd = argv[1];
     verbose_mode = has_flag(argc - 2, argv + 2, "-verbose") || has_flag(argc - 2, argv + 2, "--verbose");
 
-    if (strcmp(cmd, "health") == 0 || strcmp(cmd, "ping") == 0) {
-        cmd_health();
-        return 0;
-    }
-
-    if (strcmp(cmd, "set") == 0) {
-        const char *endpoint = first_nonflag(argc - 2, argv + 2);
-        if (!endpoint) {
-            fprintf(stderr, "%s%serror:%s registry URL required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
-            return 1;
+    /* repo subcommand: pkg repo <show|add|remove|ping> [args...] */
+    if (strcmp(cmd, "repo") == 0) {
+        const char *subcmd = (argc > 2) ? argv[2] : NULL;
+        /* join remaining args after subcmd into a single string for "repo add name url" */
+        const char *arg = NULL;
+        if (argc > 3) {
+            /* find where non-flag args start after subcmd */
+            static char argbuf[2048];
+            argbuf[0] = '\0';
+            for (int i = 3; i < argc; i++) {
+                if (argv[i][0] == '-') continue;
+                if (argbuf[0]) strcat(argbuf, " ");
+                strcat(argbuf, argv[i]);
+            }
+            if (argbuf[0]) arg = argbuf;
         }
-        cmd_set(endpoint);
+        cmd_repo(subcmd, arg);
         return 0;
     }
 
-    if (strcmp(cmd, "get") == 0 || strcmp(cmd, "install") == 0) {
+    /* install: pkg install <package> */
+    if (strcmp(cmd, "install") == 0 || strcmp(cmd, "get") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
             fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
@@ -76,11 +101,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    if (strcmp(cmd, "list") == 0 || strcmp(cmd, "ls") == 0) {
-        cmd_list();
-        return 0;
-    }
-
+    /* remove: pkg remove <package> */
     if (strcmp(cmd, "remove") == 0 || strcmp(cmd, "rm") == 0 || strcmp(cmd, "uninstall") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
@@ -91,11 +112,19 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0) {
-        fprintf(stdout, "k9-pkg %s\n", PKG_VERSION);
+    /* list */
+    if (strcmp(cmd, "list") == 0 || strcmp(cmd, "ls") == 0) {
+        cmd_list();
         return 0;
     }
 
+    /* version */
+    if (strcmp(cmd, "--version") == 0 || strcmp(cmd, "-v") == 0) {
+        fprintf(stdout, "kx-pkg %s\n", PKG_VERSION);
+        return 0;
+    }
+
+    /* help */
     if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0) {
         usage();
         return 0;

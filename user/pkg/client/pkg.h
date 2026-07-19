@@ -14,10 +14,14 @@
 #define ANSI_BOLD    "\x1b[1m"
 #define ANSI_DIM     "\x1b[2m"
 
-#define DEFAULT_ENDPOINT "http://10.0.2.2:8000"
 #define USER_AGENT "K9PackageManager/2.0"
-
 #define PKG_VERSION "0.2.0"
+
+#define MAX_DEPS      32
+#define MAX_REPOS     16
+#define MAX_DEP_DEPTH 64
+
+#define REPO_SOURCES_PATH "/etc/pkg/sources"
 
 typedef struct {
     char name[128];
@@ -28,7 +32,15 @@ typedef struct {
     char license[64];
     char homepage[256];
     int revision;
+    char depends[MAX_DEPS][128];
+    int depends_count;
 } PackageInfo;
+
+typedef struct {
+    char name[128];
+    char url[512];
+    int priority;
+} RepoConfig;
 
 extern int verbose_mode;
 
