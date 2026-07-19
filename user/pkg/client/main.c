@@ -37,6 +37,7 @@ static void usage(void) {
         "  %spkg repo ping%s               Check repository availability\n"
         "\n"
         "%sOptions:%s\n"
+        "  %s-y, --yes%s                 Assume \"yes\" to all prompts\n"
         "  %s-v, --verbose%s               Verbose output\n"
         "  %s-h, --help%s                  Show this help\n"
         "\n",
@@ -57,6 +58,7 @@ static void usage(void) {
 
         ANSI_BOLD, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET
     );
 }
@@ -69,6 +71,7 @@ int main(int argc, char **argv) {
 
     const char *cmd = argv[1];
     verbose_mode = has_flag(argc - 2, argv + 2, "-verbose") || has_flag(argc - 2, argv + 2, "--verbose");
+    yes_mode = has_flag(argc - 2, argv + 2, "-y") || has_flag(argc - 2, argv + 2, "--yes");
 
     /* repo subcommand: pkg repo <show|add|remove|ping> [args...] */
     if (strcmp(cmd, "repo") == 0) {

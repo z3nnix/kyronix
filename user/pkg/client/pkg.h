@@ -43,5 +43,6 @@ typedef struct {
 } RepoConfig;
 
 extern int verbose_mode;
+extern int yes_mode;
 
 #endif

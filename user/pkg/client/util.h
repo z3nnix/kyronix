@@ -26,4 +26,7 @@ void write_repos(const RepoConfig *repos, int count);
 void add_repo(const char *name, const char *url, int priority);
 void remove_repo(const char *name);
 
+/* Disk space */
+long disk_available(const char *path);
+
 #endif

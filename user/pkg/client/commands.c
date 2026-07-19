@@ -15,6 +15,7 @@
 #include "util.h"
 
 int verbose_mode = 0;
+int yes_mode = 0;
 
 static int line_exists(const char *buf, const char *name) {
     if (!buf || !name) return 0;
@@ -246,6 +247,7 @@ typedef struct {
     char name[128];
     char version[64];
     char endpoint[512];
+    long download_size; /* bytes, from Content-Length */
     int installed; /* 1 if already on disk, skip install but may still need dep check */
 } ResolvedPkg;
 
@@ -346,11 +348,15 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
     return 0;
 }
 
-static int do_install(const char *name, const char *endpoint) {
-    char url[1200];
+/* GCC inliner overestimates string lengths from ResolvedPkg fields, triggering false truncation warnings */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+static int do_install(const char *name, const char *endpoint, long download_size) {
+    char url[2048];
     snprintf(url, sizeof(url), "%s/packages/%s", endpoint, name);
 
-    log_step("resolving", "%s", name);
+    /* => resolving name */
+    fprintf(stdout, "%s=>%s resolving %s%s%s", ANSI_CYAN, ANSI_RESET, ANSI_BOLD, name, ANSI_RESET);
 
     int code = 0;
     char *manifest = http_get_body(url, &code);
@@ -366,22 +372,22 @@ static int do_install(const char *name, const char *endpoint) {
 
     if (strcmp(pkg.arch, "x86-64") != 0) dief("architecture %s not supported", pkg.arch);
 
-    if (pkg.description[0])
-        fprintf(stdout, "  %s%s%s - %s\n", ANSI_BOLD, pkg.name, ANSI_RESET, pkg.description);
-    fprintf(stdout, "  version:    %s rev %d\n", pkg.version, pkg.revision);
-    fprintf(stdout, "  arch:       %s\n", pkg.arch);
-    if (pkg.maintainer[0]) fprintf(stdout, "  maintainer: %s\n", pkg.maintainer);
-    if (pkg.license[0])    fprintf(stdout, "  license:    %s\n", pkg.license);
-    if (pkg.homepage[0])   fprintf(stdout, "  homepage:   %s\n", pkg.homepage);
+    /* compact info line: version: X rev Y | arch: Z | maintainer: M */
+    fprintf(stdout, "\n  version: %s rev %d", pkg.version, pkg.revision);
+    fprintf(stdout, " | arch: %s", pkg.arch);
+    if (pkg.maintainer[0]) fprintf(stdout, " | maintainer: %s", pkg.maintainer);
+    fprintf(stdout, "\n");
+    if (pkg.license[0])    fprintf(stdout, "  license: %s", pkg.license);
+    if (pkg.homepage[0])   fprintf(stdout, " | homepage: %s", pkg.homepage);
+    if (pkg.license[0] || pkg.homepage[0]) fprintf(stdout, "\n");
     if (pkg.depends_count > 0) {
-        fprintf(stdout, "  depends:    ");
-        for (int i = 0; i < pkg.depends_count; i++) {
+        fprintf(stdout, "  depends: ");
+        for (int i = 0; i < pkg.depends_count; i++)
             fprintf(stdout, "%s%s", i > 0 ? ", " : "", pkg.depends[i]);
-        }
         fprintf(stdout, "\n");
     }
-    fprintf(stdout, "\n");
 
+    /* set up temp dir and paths */
     char tmp_template[] = "/tmp/pkg-XXXXXX";
     char *tmp_dir = mkdtemp(tmp_template);
     if (!tmp_dir) dief("failed to create temporary directory");
@@ -391,39 +397,46 @@ static int do_install(const char *name, const char *endpoint) {
     snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.gz.md5");
     snprintf(script_path, sizeof(script_path), "%s/%s", tmp_dir, "install.sh");
     snprintf(extract_dir, sizeof(extract_dir), "%s/%s", tmp_dir, "extract");
-
     ensure_dir(extract_dir);
 
     const char *install_dir = "/usr/bin";
-
-    char base[1200];
+    char base[2048];
     snprintf(base, sizeof(base), "%s/packages/%s", endpoint, name);
 
-    char url_archive[1400], url_checksum[1400], url_script[1400];
+    char url_archive[2200], url_checksum[2200], url_script[2200];
     snprintf(url_archive, sizeof(url_archive), "%s/archive", base);
     snprintf(url_checksum, sizeof(url_checksum), "%s/checksum", base);
     snprintf(url_script, sizeof(url_script), "%s/install.sh", base);
 
-    log_step("downloading", "archive");
+    /* => downloading... */
+    if (download_size > 0) {
+        if (download_size > 1048576)
+            fprintf(stdout, "%s=>%s downloading... %ld.%ld MB", ANSI_CYAN, ANSI_RESET,
+                    download_size / 1048576, (download_size % 1048576) * 10 / 1048576);
+        else
+            fprintf(stdout, "%s=>%s downloading... %ld KB", ANSI_CYAN, ANSI_RESET, download_size / 1024);
+    } else {
+        fprintf(stdout, "%s=>%s downloading...", ANSI_CYAN, ANSI_RESET);
+    }
+    fflush(stdout);
     if (http_download(url_archive, archive_path, "archive") != 0) dief("archive download failed");
-
-    log_step("downloading", "checksum");
     if (http_download(url_checksum, checksum_path, "checksum") != 0) dief("checksum download failed");
-
-    log_step("downloading", "install script");
     if (http_download(url_script, script_path, "script") != 0) dief("install script download failed");
 
-    log_step("verifying", "checksum");
+    /* => verifying checksum... */
+    fprintf(stdout, "%s=>%s verifying checksum...", ANSI_CYAN, ANSI_RESET);
+    fflush(stdout);
     if (verify_checksum(archive_path, checksum_path) != 0) dief("checksum mismatch - archive corrupted");
-    log_info("integrity verified");
+    fprintf(stdout, " %sok%s\n", ANSI_GREEN, ANSI_RESET);
 
-    log_step("extracting", "archive");
+    /* => extracting... */
+    fprintf(stdout, "%s=>%s extracting...", ANSI_CYAN, ANSI_RESET);
+    fflush(stdout);
     char *tar_argv[] = { "tar", "-xzf", archive_path, NULL };
     if (run_cmd_in(extract_dir, tar_argv) != 0) dief("archive extraction failed");
-    log_info("extracted to %s", extract_dir);
+    fprintf(stdout, " %sok%s\n", ANSI_GREEN, ANSI_RESET);
 
-    log_step("running", "install script");
-
+    /* run install script */
     char pre_scan[1024];
     snprintf(pre_scan, sizeof(pre_scan), "%s/.pre", tmp_dir);
     FILE *pf = fopen(pre_scan, "w");
@@ -442,8 +455,7 @@ static int do_install(const char *name, const char *endpoint) {
     char *sh_argv[] = { "sh", script_path, extract_dir, archive_path, checksum_path, (char *)install_dir, NULL };
     if (run_cmd(sh_argv) != 0) dief("install script failed");
 
-    log_step("activating", "binaries");
-
+    /* detect new files and register */
     const char *home = home_dir();
     char reg_parent[512];
     snprintf(reg_parent, sizeof(reg_parent), "%s/.pkg", home);
@@ -451,7 +463,7 @@ static int do_install(const char *name, const char *endpoint) {
     snprintf(reg_parent, sizeof(reg_parent), "%s/.pkg/installed", home);
     ensure_dir(reg_parent);
 
-    char reg_dir[512];
+    char reg_dir[1024];
     snprintf(reg_dir, sizeof(reg_dir), "%s/.pkg/installed/%s", home, name);
     ensure_dir(reg_dir);
 
@@ -469,12 +481,9 @@ static int do_install(const char *name, const char *endpoint) {
         while ((ent = readdir(ad)) != NULL) {
             if (ent->d_name[0] == '.') continue;
             if (ent->d_type != DT_REG) continue;
-
             if (line_exists(pre_names, ent->d_name)) continue;
-
             char bin_path[512];
             snprintf(bin_path, sizeof(bin_path), "%s/%s", install_dir, ent->d_name);
-
             struct stat bst;
             if (stat(bin_path, &bst) == 0) {
                 chmod(bin_path, 0755);
@@ -486,6 +495,7 @@ static int do_install(const char *name, const char *endpoint) {
     free(pre_names);
     if (flist) fclose(flist);
 
+    /* write manifest */
     char manifest_path[1024];
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest", reg_dir);
     FILE *mf = fopen(manifest_path, "w");
@@ -498,9 +508,13 @@ static int do_install(const char *name, const char *endpoint) {
         fclose(mf);
     }
 
-    log_done("installed %s %s", pkg.name, pkg.version);
+    /* => installed to /path */
+    fprintf(stdout, "%s=>%s installed to %s%s%s\n", ANSI_CYAN, ANSI_RESET, ANSI_DIM, install_dir, ANSI_RESET);
+    fprintf(stdout, "%s[*]%s %s %sinstalled%s\n", ANSI_GREEN, ANSI_RESET, pkg.name, ANSI_GREEN, ANSI_RESET);
+
     return 0;
 }
+#pragma GCC diagnostic pop
 
 void cmd_repo(const char *subcmd, const char *arg) {
     if (!subcmd) {
@@ -605,7 +619,6 @@ void cmd_get(const char *name) {
     }
 
     if (count == 0) {
-        /* either already installed or nothing to do */
         if (is_installed(name))
             log_info("'%s' is already installed", name);
         else
@@ -613,21 +626,100 @@ void cmd_get(const char *name) {
         return;
     }
 
-    /* show dependency tree */
-    if (count > 1) {
-        fprintf(stdout, "\n  %sDependencies:%s\n", ANSI_BOLD, ANSI_RESET);
-        for (int i = 0; i < count; i++) {
-            fprintf(stdout, "    %s%s%s %s%s%s\n",
-                    ANSI_CYAN, install_list[i].name, ANSI_RESET,
-                    ANSI_GREEN, install_list[i].version, ANSI_RESET);
-        }
-        fprintf(stdout, "\n");
+    /* fetch download sizes */
+    long total_download = 0;
+    for (int i = 0; i < count; i++) {
+        char url[1400];
+        snprintf(url, sizeof(url), "%s/packages/%s/archive", install_list[i].endpoint, install_list[i].name);
+        long sz = http_content_length(url);
+        install_list[i].download_size = sz > 0 ? sz : 0;
+        total_download += install_list[i].download_size;
     }
+
+    /* format sizes */
+    long estimated_disk = total_download > 0 ? total_download * 5 / 2 : 0;
+    long avail = disk_available("/usr");
+
+    /* "The following packages will be installed:" */
+    fprintf(stdout, "\n  The following packages will be installed:\n  ");
+    for (int i = 0; i < count; i++) {
+        if (i > 0) fprintf(stdout, " + ");
+        long sz = install_list[i].download_size;
+        if (sz > 1048576)
+            fprintf(stdout, "%s (%s) [%ld.%ld MB]", install_list[i].name, install_list[i].version,
+                    sz / 1048576, (sz % 1048576) * 10 / 1048576);
+        else if (sz > 0)
+            fprintf(stdout, "%s (%s) [%ld KB]", install_list[i].name, install_list[i].version, sz / 1024);
+        else
+            fprintf(stdout, "%s (%s)", install_list[i].name, install_list[i].version);
+    }
+    fprintf(stdout, "\n");
+
+    /* total line */
+    fprintf(stdout, "  Total download size: ");
+    if (total_download > 1048576)
+        fprintf(stdout, "%ld.%ld MB", total_download / 1048576, (total_download % 1048576) * 10 / 1048576);
+    else if (total_download > 0)
+        fprintf(stdout, "%ld KB", total_download / 1024);
+    else
+        fprintf(stdout, "unknown");
+
+    fprintf(stdout, " | Required disk space: ");
+    if (estimated_disk > 1048576)
+        fprintf(stdout, "%ld.%ld MB", estimated_disk / 1048576, (estimated_disk % 1048576) * 10 / 1048576);
+    else if (estimated_disk > 0)
+        fprintf(stdout, "%ld KB", estimated_disk / 1024);
+    else
+        fprintf(stdout, "unknown");
+    fprintf(stdout, "\n");
+
+    /* space available */
+    fprintf(stdout, "  Space available: ");
+    if (avail >= 0) {
+        if (avail > 1073741824L)
+            fprintf(stdout, "%ld.%ld GB", avail / 1073741824L, (avail % 1073741824L) * 10 / 1073741824L);
+        else if (avail > 1048576)
+            fprintf(stdout, "%ld.%ld MB", avail / 1048576, (avail % 1048576) * 10 / 1048576);
+        else
+            fprintf(stdout, "%ld KB", avail / 1024);
+    } else {
+        fprintf(stdout, "unknown");
+    }
+    fprintf(stdout, "\n");
+
+    /* warn if low on space */
+    if (avail >= 0 && estimated_disk > 0 && avail < estimated_disk) {
+        fprintf(stderr, "\n  %s[!]%s Not enough disk space\n", ANSI_YELLOW, ANSI_RESET);
+        return;
+    }
+
+    /* prompt for confirmation (skip if -y/--yes) */
+    fprintf(stdout, "\n  Do you want to continue? [Y/n] ");
+    fflush(stdout);
+
+    if (!yes_mode) {
+        char answer[16] = "";
+        if (fgets(answer, sizeof(answer), stdin)) {
+            if (answer[0] != '\n' && answer[0] != 'y' && answer[0] != 'Y') {
+                fprintf(stdout, "\n");
+                log_info("aborted");
+                return;
+            }
+        }
+    }
+    fprintf(stdout, "\n");
 
     /* install in order (deps first, already in topological order) */
     for (int i = 0; i < count; i++) {
-        do_install(install_list[i].name, install_list[i].endpoint);
+        do_install(install_list[i].name, install_list[i].endpoint, install_list[i].download_size);
     }
+
+    /* post-install summary */
+    fprintf(stdout, "\n  %d package%s installed successfully:\n", count, count == 1 ? "" : "s");
+    for (int i = 0; i < count; i++) {
+        fprintf(stdout, "    - %s %s\n", install_list[i].name, install_list[i].version);
+    }
+    fprintf(stdout, "\n");
 }
 
 void cmd_list(void) {

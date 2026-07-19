@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -337,4 +338,11 @@ void remove_repo(const char *name) {
 
     write_repos(repos, count);
     log_done("repository '%s' removed", name);
+}
+
+/* Returns available disk space in bytes for the filesystem containing path, or -1 on error */
+long disk_available(const char *path) {
+    struct statvfs vfs;
+    if (statvfs(path, &vfs) != 0) return -1;
+    return (long)(vfs.f_bavail * vfs.f_frsize);
 }

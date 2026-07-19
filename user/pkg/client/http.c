@@ -219,6 +219,62 @@ static long parse_content_length(const unsigned char *headers) {
     return -1;
 }
 
+/*
+ * Fetch Content-Length for a URL without downloading the body.
+ * Sends a GET request, reads only headers, extracts Content-Length.
+ * Returns the size in bytes, or -1 if unavailable.
+ */
+long http_content_length(const char *url) {
+    char host[256], path[1024];
+    int port = 0;
+    parse_http_url(url, host, sizeof(host), &port, path, sizeof(path));
+
+    int fd = connect_tcp(host, port);
+    if (fd < 0) return -1;
+
+    char request[2048];
+    snprintf(request, sizeof(request),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "User-Agent: %s\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        path, host, USER_AGENT);
+
+    if (write(fd, request, strlen(request)) < 0) {
+        close(fd);
+        return -1;
+    }
+
+    /* read until we find header terminator, then stop */
+    size_t cap = 8192;
+    size_t len = 0;
+    unsigned char *buf = (unsigned char *)malloc(cap + 1);
+    if (!buf) { close(fd); return -1; }
+
+    unsigned char *hdr_end = NULL;
+    while (!hdr_end) {
+        if (len == cap) {
+            cap *= 2;
+            unsigned char *nb = (unsigned char *)realloc(buf, cap + 1);
+            if (!nb) { free(buf); close(fd); return -1; }
+            buf = nb;
+        }
+        ssize_t rd = read(fd, buf + len, cap - len);
+        if (rd <= 0) break;
+        len += (size_t)rd;
+        buf[len] = '\0';
+        hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
+        if (!hdr_end) hdr_end = (unsigned char *)strstr((char *)buf, "\n\n");
+    }
+    close(fd);
+
+    long cl = -1;
+    if (hdr_end) cl = parse_content_length(buf);
+    free(buf);
+    return cl;
+}
+
 static void render_bar(const char *label, size_t received, size_t total, int bar_w) {
     int pct = 0;
     if (total > 0) pct = (int)((received * 100) / total);
