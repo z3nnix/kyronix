@@ -1,5 +1,7 @@
 #include "crypto/chacha20.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/string.h"
+static spinlock_t g_chacha20_rng_lock = SPINLOCK_INIT;
 
 static uint32_t rotl32(uint32_t x, int n) { return (x << n) | (x >> (32 - n)); }
 
@@ -7,6 +9,26 @@ static uint32_t load32_le(const uint8_t *p) {
     return (uint32_t) p[0] | ((uint32_t) p[1] << 8) | ((uint32_t) p[2] << 16) |
            ((uint32_t) p[3] << 24);
 }
+
+
+
+static void
+store32_le(uint8_t *p, uint32_t x)
+{
+	p[0] = (uint8_t)x;
+	p[1] = (uint8_t)(x >> 8);
+	p[2] = (uint8_t)(x >> 16);
+	p[3] = (uint8_t)(x >> 24);
+}
+
+static void
+store64_le(uint8_t *p, uint64_t x)
+{
+	store32_le(p, (uint32_t)x);
+	store32_le(p + 4, (uint32_t)(x >> 32));
+}
+
+
 
 static void chacha20_next_block(struct chacha20_ctx *ctx) {
     uint32_t x[16];
@@ -137,19 +159,96 @@ static void chacha20_rng_reseed(struct chacha20_rng *rng, const uint8_t seed[32]
 }
 
 void chacha20_rng_init(struct chacha20_rng *rng, const uint8_t seed[32]) {
+    uint64_t flags = irq_save();
+    spin_lock(&g_chacha20_rng_lock);
     chacha20_rng_reseed(rng, seed);
+    spin_unlock(&g_chacha20_rng_lock);
+    irq_restore(flags);
 }
 
-void chacha20_rng_bytes(struct chacha20_rng *rng, uint8_t *buf, size_t len) {
-    uint8_t *ks = (uint8_t *) rng->inner.keystream32;
+static void
+chacha20_rng_bytes_unlocked(struct chacha20_rng *rng, uint8_t *buf, size_t len)
+{
+	uint8_t *ks;
+	size_t i;
 
-    for (size_t i = 0; i < len; i++) {
-        if (rng->inner.position >= CHACHA20_BLOCK_SIZE) {
-            chacha20_next_block(&rng->inner);
-            rng->inner.position = 0;
-        }
-        buf[i] = ks[rng->inner.position];
-        rng->inner.position++;
-    }
-    rng->counter += len;
+	ks = (uint8_t *)rng->inner.keystream32;
+	for (i = 0; i < len; i++) {
+		if (rng->inner.position >= CHACHA20_BLOCK_SIZE) {
+			chacha20_next_block(&rng->inner);
+			rng->inner.position = 0;
+		}
+		buf[i] = ks[rng->inner.position];
+		rng->inner.position++;
+	}
+	rng->counter += len;
+}
+/* get data from rng */
+void
+chacha20_rng_bytes(struct chacha20_rng *rng, uint8_t *buf, size_t len)
+{
+	uint64_t flags;
+	flags = irq_save();
+	spin_lock(&g_chacha20_rng_lock);
+	chacha20_rng_bytes_unlocked(rng, buf, len);
+	spin_unlock(&g_chacha20_rng_lock);
+	irq_restore(flags);
+}
+/* fold data to 32 byte*/
+static void
+chacha20_rng_fold(uint8_t out[32], const uint8_t *data, size_t len)
+{
+	static const uint8_t init[64] = "kyronix kyronix";
+	struct chacha20_ctx ctx;
+	uint8_t state[64];
+	uint8_t block[64];
+	size_t chunk;
+	size_t off;
+	size_t i;
+
+	memcpy(state, init, sizeof(state));
+	store64_le(state + 48, (uint64_t)len);
+
+	for (off = 0; off < len; off += chunk) {
+		chunk = len - off;
+		if (chunk > sizeof(state))
+			chunk = sizeof(state);
+
+		for (i = 0; i < chunk; i++)
+			state[i] ^= data[off + i] + (uint8_t)(off + i);
+
+		store32_le(state + 44, (uint32_t)(off / sizeof(state)));
+		chacha20_init(&ctx, state, state + 32, 0);
+		memcpy(block, state, sizeof(block));
+		chacha20_encrypt(&ctx, block, sizeof(block));
+		for (i = 0; i < sizeof(state); i++)
+			block[i] ^= state[(i + 17) & 63] + (uint8_t)i;
+		memcpy(state, block, sizeof(state));
+	}
+
+	for (i = 0; i < 32; i++)
+		out[i] = state[i] ^ state[i + 32];
+}
+/* mix data to rng */
+void
+chacha20_rng_mix(struct chacha20_rng *rng, const uint8_t *data, size_t len)
+{
+	uint8_t folded[32];
+	uint8_t seed[32];
+	uint64_t flags;
+	size_t i;
+
+	if (data == NULL || len == 0)
+		return;
+
+	chacha20_rng_fold(folded, data, len);
+
+	flags = irq_save();
+	spin_lock(&g_chacha20_rng_lock);
+	chacha20_rng_bytes_unlocked(rng, seed, sizeof(seed));
+	for (i = 0; i < sizeof(seed); i++)
+		seed[i] ^= folded[i];
+	chacha20_rng_reseed(rng, seed);
+	spin_unlock(&g_chacha20_rng_lock);
+	irq_restore(flags);
 }
