@@ -12,8 +12,8 @@ Operating system that sucks less.
 
 <br clear="left"/>
 
-Kyronix is a modern hybrid Linux-compatible operating system focused on
-performance, security and Linux compatibility.
+Kyronix is a modern hybrid operating system focused on
+performance, security and stability.
 
 <img src="meta/screenshots/preview.png" alt="Kyronix preview" width="640">
 
