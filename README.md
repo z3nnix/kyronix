@@ -56,10 +56,10 @@ performance, security and Linux compatibility.
 ### Userspace
 - **ksh** shell
 - **vi** text editor
-- **Kyrobox** POSIX utilities
+- **kyrobox** POSIX utilities
 - **login** authentication
 - **pkg** package manager
-- Runs musl-linked applications (tcc, nasm, dillo, etc.)
+- Runs musl-linked applications
 
 ### Advanced
 - POSIX signals
