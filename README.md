@@ -58,6 +58,7 @@ performance, security and Linux compatibility.
 - **vi** text editor
 - **Kyrobox** POSIX utilities
 - **login** authentication
+- **pkg** package manager
 - Runs musl-linked applications (tcc, nasm, dillo, etc.)
 
 ### Advanced
