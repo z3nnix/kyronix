@@ -1,4 +1,7 @@
 [main]
-url=http://10.0.2.2:8000
+url=http://45.133.251.45:8000
 priority=100
 
+[localhost fallback]
+url=http://10.0.2.2:8000
+priority=1

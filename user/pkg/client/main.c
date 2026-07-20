@@ -28,6 +28,7 @@ static void usage(void) {
         "%sUsage:%s\n"
         "  %spkg install%s <package>       Install a package\n"
         "  %spkg remove%s <package>        Uninstall a package\n"
+        "  %spkg autoremove%s              Remove orphaned dependencies\n"
         "  %spkg list%s                    List installed packages\n"
         "\n"
         "%sRepository:%s\n"
@@ -46,6 +47,7 @@ static void usage(void) {
         ANSI_DIM, ANSI_RESET,
 
         ANSI_BOLD, ANSI_RESET,
+        ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
         ANSI_CYAN, ANSI_RESET,
@@ -118,6 +120,12 @@ int main(int argc, char **argv) {
     /* list */
     if (strcmp(cmd, "list") == 0 || strcmp(cmd, "ls") == 0) {
         cmd_list();
+        return 0;
+    }
+
+    /* autoremove */
+    if (strcmp(cmd, "autoremove") == 0 || strcmp(cmd, "clean") == 0) {
+        cmd_autoremove();
         return 0;
     }
 

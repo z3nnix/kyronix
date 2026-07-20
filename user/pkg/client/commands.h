@@ -6,5 +6,6 @@ void cmd_repo(const char *subcmd, const char *arg);
 void cmd_get(const char *name);
 void cmd_list(void);
 void cmd_remove(const char *name);
+void cmd_autoremove(void);
 
 #endif
