@@ -143,12 +143,6 @@ int run_cmd_in(const char *dir, char *const argv[]) {
     return -1;
 }
 
-/*
- * Minimal INI parser for /etc/pkg/sources
- * Format: [section]\nkey=value\n lines.
- * Sections without a valid url= are skipped.
- * Lines starting with # or ; are comments.
- */
 int read_repos(RepoConfig *repos, int max) {
     size_t len = 0;
     char *txt = read_file(REPO_SOURCES_PATH, &len);
@@ -162,11 +156,9 @@ int read_repos(RepoConfig *repos, int max) {
 
     char *line = txt;
     while (*line && count < max) {
-        /* advance to start of line */
         while (*line == '\n' || *line == '\r') line++;
         if (!*line) break;
 
-        /* extract line */
         char *eol = strchr(line, '\n');
         size_t llen = eol ? (size_t)(eol - line) : strlen(line);
         char lbuf[1024];
@@ -175,18 +167,14 @@ int read_repos(RepoConfig *repos, int max) {
         lbuf[llen] = '\0';
         line = eol ? eol + 1 : line + llen;
 
-        /* trim in-place */
         size_t n = strlen(lbuf);
         while (n > 0 && (lbuf[n-1] == ' ' || lbuf[n-1] == '\t' || lbuf[n-1] == '\r')) lbuf[--n] = '\0';
         char *s = lbuf;
         while (*s == ' ' || *s == '\t') s++;
 
-        /* skip empty and comments */
         if (!*s || *s == '#' || *s == ';') continue;
 
-        /* section header: [name] */
         if (*s == '[') {
-            /* flush previous section if it had a url */
             if (has_section && current_url[0]) {
                 snprintf(repos[count].name, sizeof(repos[count].name), "%s", current_name);
                 snprintf(repos[count].url, sizeof(repos[count].url), "%s", current_url);
@@ -209,14 +197,12 @@ int read_repos(RepoConfig *repos, int max) {
             continue;
         }
 
-        /* key=value */
         char *eq = strchr(s, '=');
         if (!eq) continue;
         *eq = '\0';
         char *key = s;
         char *val = eq + 1;
 
-        /* trim key */
         size_t klen = strlen(key);
         while (klen > 0 && (key[klen-1] == ' ' || key[klen-1] == '\t')) key[--klen] = '\0';
 
@@ -224,7 +210,6 @@ int read_repos(RepoConfig *repos, int max) {
         while (*val == ' ' || *val == '\t') val++;
         size_t vlen = strlen(val);
         while (vlen > 0 && (val[vlen-1] == ' ' || val[vlen-1] == '\t')) val[--vlen] = '\0';
-        /* strip inline comment */
         {
             char *hash = strchr(val, '#');
             char *semi = strchr(val, ';');
@@ -246,7 +231,6 @@ int read_repos(RepoConfig *repos, int max) {
         if (strcmp(key, "url") == 0) {
             snprintf(current_url, sizeof(current_url), "%s", val);
         } else if (strcmp(key, "priority") == 0) {
-            /* manual atoi to avoid musl C23 linkage issues */
             int v = 0;
             int neg = 1;
             const char *p = val;
@@ -256,7 +240,6 @@ int read_repos(RepoConfig *repos, int max) {
         }
     }
 
-    /* flush last section */
     if (has_section && current_url[0] && count < max) {
         snprintf(repos[count].name, sizeof(repos[count].name), "%s", current_name);
         snprintf(repos[count].url, sizeof(repos[count].url), "%s", current_url);
@@ -266,7 +249,6 @@ int read_repos(RepoConfig *repos, int max) {
 
     free(txt);
 
-    /* sort by priority descending (simple insertion sort, max 16 items) */
     for (int i = 1; i < count; i++) {
         RepoConfig key = repos[i];
         int j = i - 1;
@@ -297,7 +279,6 @@ void add_repo(const char *name, const char *url, int priority) {
     RepoConfig repos[MAX_REPOS];
     int count = read_repos(repos, MAX_REPOS);
 
-    /* if name already exists, update it */
     for (int i = 0; i < count; i++) {
         if (strcmp(repos[i].name, name) == 0) {
             snprintf(repos[i].url, sizeof(repos[i].url), "%s", url);
@@ -340,7 +321,6 @@ void remove_repo(const char *name) {
     log_done("repository '%s' removed", name);
 }
 
-/* Returns available disk space in bytes for the filesystem containing path, or -1 on error */
 long disk_available(const char *path) {
     struct statvfs vfs;
     if (statvfs(path, &vfs) != 0) return -1;

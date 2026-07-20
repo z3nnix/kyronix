@@ -26,7 +26,6 @@ static void parse_http_url(const char *url, char *host, size_t host_n, int *port
 
     if (colon && (!slash || colon < slash)) {
         snprintf(host, host_n, "%.*s", (int)(colon - p), p);
-        /* manual atoi to avoid musl C23 linkage issues */
         { const char *np = colon + 1; int nv = 0; while (*np >= '0' && *np <= '9') { nv = nv * 10 + (*np - '0'); np++; } *port = nv; }
         if (slash) snprintf(path, path_n, "%s", slash);
         else snprintf(path, path_n, "/");
@@ -51,7 +50,10 @@ static int connect_tcp(const char *host, int port) {
     hints.ai_family = AF_UNSPEC;
 
     struct addrinfo *res = NULL;
-    if (getaddrinfo(host, port_s, &hints, &res) != 0) return -1;
+    if (getaddrinfo(host, port_s, &hints, &res) != 0) {
+        log_info("DNS resolution failed for %s:%d", host, port);
+        return -1;
+    }
 
     int fd = -1;
     for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
@@ -84,8 +86,9 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
 
     if (verbose_mode) log_info("GET %s", url);
     if (write(fd, request, strlen(request)) < 0) {
+        log_info("write failed for %s", url);
         close(fd);
-        dief("network write failed");
+        return NULL;
     }
 
     size_t cap = 65536;
@@ -120,11 +123,10 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
     buf[len] = '\0';
 
     unsigned char *hdr_end = NULL;
-    /* Some servers/proxies use \n only instead of \r\n — handle both */
     hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
     if (!hdr_end) {
         hdr_end = (unsigned char *)strstr((char *)buf, "\n\n");
-        if (hdr_end) hdr_end += 1; /* point at second \n */
+        if (hdr_end) hdr_end += 1;
     }
     if (!hdr_end) {
         free(buf);
@@ -133,7 +135,6 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
         return NULL;
     }
 
-    /* find end of first line (status line) */
     unsigned char *status_line_end = (unsigned char *)strstr((char *)buf, "\r\n");
     if (!status_line_end || status_line_end > hdr_end)
         status_line_end = (unsigned char *)strstr((char *)buf, "\n");
@@ -146,7 +147,6 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
     char status_line[128];
     snprintf(status_line, sizeof(status_line), "%.*s", (int)(status_line_end - buf), buf);
 
-    /* parse "HTTP/x.y NNN" to extract status code */
     int code = 0;
     {
         const char *sp = status_line;
@@ -159,11 +159,10 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
     if (status_code) *status_code = code;
 
     size_t header_len = (size_t)(hdr_end - buf);
-    /* account for the 2 or 4 byte header terminator */
     if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
         header_len += 4;
     else
-        header_len += 2; /* \n\n */
+        header_len += 2;
     size_t raw_len = len - header_len;
     unsigned char *body = (unsigned char *)malloc(raw_len + 1);
     if (!body) {
@@ -206,7 +205,6 @@ static long parse_content_length(const unsigned char *headers) {
         if (match) {
             p += nlen;
             while (*p == ' ') p++;
-            /* manual atol to avoid musl C23 linkage issues */
             long lv = 0;
             int lneg = 1;
             if (*p == '-') { lneg = -1; p++; }
@@ -219,11 +217,6 @@ static long parse_content_length(const unsigned char *headers) {
     return -1;
 }
 
-/*
- * Fetch Content-Length for a URL without downloading the body.
- * Sends a GET request, reads only headers, extracts Content-Length.
- * Returns the size in bytes, or -1 if unavailable.
- */
 long http_content_length(const char *url) {
     char host[256], path[1024];
     int port = 0;
@@ -246,7 +239,6 @@ long http_content_length(const char *url) {
         return -1;
     }
 
-    /* read until we find header terminator, then stop */
     size_t cap = 8192;
     size_t len = 0;
     unsigned char *buf = (unsigned char *)malloc(cap + 1);
@@ -303,12 +295,13 @@ static void render_bar(const char *label, size_t received, size_t total, int bar
 }
 
 int http_download(const char *url, const char *dest, const char *label) {
+    if (verbose_mode) log_info("download %s -> %s", url, dest);
     char host[256], path[1024];
     int port = 0;
     parse_http_url(url, host, sizeof(host), &port, path, sizeof(path));
 
     int fd = connect_tcp(host, port);
-    if (fd < 0) return -1;
+    if (fd < 0) { log_info("connect failed for %s", url); return -1; }
 
     char request[2048];
     snprintf(request, sizeof(request),
@@ -320,28 +313,28 @@ int http_download(const char *url, const char *dest, const char *label) {
         path, host, USER_AGENT);
 
     if (write(fd, request, strlen(request)) < 0) {
+        log_info("write failed for %s", url);
         close(fd);
         return -1;
     }
 
     size_t hdr_cap = 8192;
     size_t hdr_len = 0;
-    unsigned char *hdr_buf = (unsigned char *)malloc(hdr_cap);
+    unsigned char *hdr_buf = (unsigned char *)malloc(hdr_cap + 1);
     if (!hdr_buf) { close(fd); return -1; }
 
     unsigned char *hdr_end = NULL;
     while (!hdr_end) {
         if (hdr_len == hdr_cap) {
             hdr_cap *= 2;
-            unsigned char *nb = (unsigned char *)realloc(hdr_buf, hdr_cap);
+            unsigned char *nb = (unsigned char *)realloc(hdr_buf, hdr_cap + 1);
             if (!nb) { free(hdr_buf); close(fd); return -1; }
             hdr_buf = nb;
         }
         ssize_t rd = read(fd, hdr_buf + hdr_len, hdr_cap - hdr_len);
-        if (rd <= 0) { free(hdr_buf); close(fd); return -1; }
+        if (rd <= 0) { log_info("header read failed for %s (n=%zd)", url, rd); free(hdr_buf); close(fd); return -1; }
         hdr_len += (size_t)rd;
         hdr_buf[hdr_len] = '\0';
-        /* try standard \r\n\r\n, then fall back to \n\n */
         hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\r\n\r\n");
         if (!hdr_end)
             hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\n\n");
@@ -349,12 +342,10 @@ int http_download(const char *url, const char *dest, const char *label) {
 
     int code = 0;
     {
-        /* find end of first line (status line), handle both \r\n and \n */
         unsigned char *sl = (unsigned char *)strstr((char *)hdr_buf, "\r\n");
         if (!sl || sl > hdr_end)
             sl = (unsigned char *)strstr((char *)hdr_buf, "\n");
         if (sl) {
-            /* parse "HTTP/x.y NNN" to extract status code */
             const char *sp = (const char *)hdr_buf;
             while (*sp && *sp != ' ') sp++;
             if (*sp == ' ') {
@@ -370,17 +361,18 @@ int http_download(const char *url, const char *dest, const char *label) {
     if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
         header_bytes += 4;
     else
-        header_bytes += 2; /* \n\n */
+        header_bytes += 2;
     size_t initial_body = hdr_len - header_bytes;
 
     if (code != 200) {
+        log_info("HTTP %d for %s", code, url);
         free(hdr_buf);
         close(fd);
         return -1;
     }
 
     FILE *f = fopen(dest, "wb");
-    if (!f) { free(hdr_buf); close(fd); return -1; }
+    if (!f) { log_info("fopen failed for %s", dest); free(hdr_buf); close(fd); return -1; }
 
     size_t received = 0;
     int bar_w = 32;
@@ -399,12 +391,12 @@ int http_download(const char *url, const char *dest, const char *label) {
 
     for (;;) {
         ssize_t rd = read(fd, buf, buf_cap);
-        if (rd < 0) { free(buf); fclose(f); close(fd); return -1; }
+        if (rd < 0) { log_info("body read failed for %s", url); free(buf); fclose(f); close(fd); return -1; }
         if (rd == 0) break;
 
         size_t chunk = (size_t)rd;
         size_t written = fwrite(buf, 1, chunk, f);
-        if (written != chunk) { free(buf); fclose(f); close(fd); return -1; }
+        if (written != chunk) { log_info("fwrite failed for %s", dest); free(buf); fclose(f); close(fd); return -1; }
 
         received += chunk;
         render_bar(label, received, (size_t)content_length, bar_w);
@@ -417,7 +409,10 @@ int http_download(const char *url, const char *dest, const char *label) {
     render_bar(label, received, (size_t)content_length, bar_w);
     fputc('\n', stderr);
 
-    if (content_length > 0 && received != (size_t)content_length) return -1;
+    if (content_length > 0 && received != (size_t)content_length) {
+        log_info("size mismatch for %s: expected %ld got %zu", url, content_length, received);
+        return -1;
+    }
 
     return 0;
 }
