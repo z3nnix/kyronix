@@ -2,16 +2,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "version.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/lapic.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
-#include "proc/smp.h"
 #include "boot/limine.h"
 #include "drivers/fb.h"
+#include "proc/smp.h"
+#include "version.h"
 
 #include "crypto/chacha20.h"
 #include "drivers/acpi.h"
@@ -84,6 +84,12 @@ static volatile struct limine_rsdp_request rsdp_req = {
     .response = NULL,
 };
 
+static volatile struct limine_kernel_address_request kaddr_req = {
+    .id = LIMINE_KERNEL_ADDRESS_REQUEST,
+    .revision = 0,
+    .response = NULL,
+};
+
 LIMINE_REQUESTS_END_MARKER;
 
 static void kernel_putchar(char c, void *ctx) {
@@ -137,6 +143,115 @@ static void print_memmap(void) {
     log_info("  Usable: %lu MiB", total_usable / (1024 * 1024));
 }
 
+static inline uint64_t rdtsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t) hi << 32) | lo;
+}
+
+#define BENCH_ITERS 100000
+
+static void bench_pmm(void) {
+    void **buf = (void **) kmalloc(BENCH_ITERS * sizeof(void *));
+    if (!buf) {
+        log_info("bench pmm  : SKIP (no mem for buf)");
+        return;
+    }
+
+    uint64_t t0 = rdtsc();
+    for (int i = 0; i < BENCH_ITERS; i++) buf[i] = pmm_alloc();
+    uint64_t t1 = rdtsc();
+    for (int i = 0; i < BENCH_ITERS; i++)
+        if (buf[i]) pmm_free(buf[i]);
+    uint64_t t2 = rdtsc();
+
+    uint64_t dt_alloc = t1 - t0;
+    uint64_t dt_free = t2 - t1;
+    uint64_t alloc_mops = dt_alloc ? (uint64_t) BENCH_ITERS * 1000000ULL / dt_alloc : 0;
+    uint64_t free_mops = dt_free ? (uint64_t) BENCH_ITERS * 1000000ULL / dt_free : 0;
+
+    kprintf("bench pmm  : alloc %lu ops in %lu cycles (%lu M/OPS), free %lu ops in %lu cycles (%lu "
+            "M/OPS)\n",
+            (uint64_t) BENCH_ITERS, dt_alloc, alloc_mops, (uint64_t) BENCH_ITERS, dt_free,
+            free_mops);
+
+    kfree(buf);
+}
+
+static void bench_vmm(void) {
+    const uint64_t base = 0xffff900100000000ULL;
+    uint64_t *phys = (uint64_t *) kmalloc(BENCH_ITERS * sizeof(uint64_t));
+    if (!phys) {
+        kprintf("bench vmm  : SKIP (no mem for buf)\n");
+        return;
+    }
+
+    int count = 0;
+    for (int i = 0; i < BENCH_ITERS; i++) {
+        phys[i] = (uint64_t) pmm_alloc();
+        if (!phys[i]) {
+            kprintf("bench vmm  : SKIP (no phys pages)\n");
+            for (int j = 0; j < i; j++) pmm_free((void *) phys[j]);
+            kfree(phys);
+            return;
+        }
+        count++;
+    }
+
+    uint64_t t0 = rdtsc();
+    for (int i = 0; i < count; i++)
+        vmm_map(&g_kernel_space, base + (uint64_t) i * PAGE_SIZE, phys[i], VMM_KDATA);
+    uint64_t t1 = rdtsc();
+    for (int i = 0; i < count; i++) vmm_unmap(&g_kernel_space, base + (uint64_t) i * PAGE_SIZE);
+    uint64_t t2 = rdtsc();
+
+    for (int i = 0; i < count; i++) pmm_free((void *) phys[i]);
+    kfree(phys);
+
+    uint64_t dt_map = t1 - t0;
+    uint64_t dt_unmap = t2 - t1;
+    uint64_t map_mops = dt_map ? (uint64_t) count * 1000000ULL / dt_map : 0;
+    uint64_t unmap_mops = dt_unmap ? (uint64_t) count * 1000000ULL / dt_unmap : 0;
+
+    kprintf("bench vmm  : map %d ops in %lu cycles (%lu M/OPS), unmap %d ops in %lu cycles (%lu "
+            "M/OPS)\n",
+            count, dt_map, map_mops, count, dt_unmap, unmap_mops);
+}
+
+static void bench_heap(void) {
+    void **buf = (void **) kmalloc(BENCH_ITERS * sizeof(void *));
+    if (!buf) {
+        kprintf("bench heap : SKIP (no mem for buf)\n");
+        return;
+    }
+
+    uint64_t t0 = rdtsc();
+    for (int i = 0; i < BENCH_ITERS; i++) buf[i] = kmalloc(64);
+    uint64_t t1 = rdtsc();
+    for (int i = 0; i < BENCH_ITERS; i++) kfree(buf[i]);
+    uint64_t t2 = rdtsc();
+
+    uint64_t dt_alloc = t1 - t0;
+    uint64_t dt_free = t2 - t1;
+    uint64_t alloc_mops = dt_alloc ? (uint64_t) BENCH_ITERS * 1000000ULL / dt_alloc : 0;
+    uint64_t free_mops = dt_free ? (uint64_t) BENCH_ITERS * 1000000ULL / dt_free : 0;
+
+    kprintf("bench heap : alloc %lu ops in %lu cycles (%lu M/OPS), free %lu ops in %lu cycles (%lu "
+            "M/OPS)\n",
+            (uint64_t) BENCH_ITERS, dt_alloc, alloc_mops, (uint64_t) BENCH_ITERS, dt_free,
+            free_mops);
+
+    kfree(buf);
+}
+
+static void run_mm_benchmarks(void) {
+    kprintf("memory manager benchmark (%d iterations):\n", BENCH_ITERS);
+    bench_pmm();
+    bench_vmm();
+    bench_heap();
+    kprintf("\n");
+}
+
 void kmain(void) {
     serial_init(COM1);
     printf_set_putchar(kernel_putchar, NULL);
@@ -149,7 +264,23 @@ void kmain(void) {
         kprintf("FATAL: no memory map or HHDM from bootloader\n");
         cpu_halt();
     }
-    pmm_init(mmap_req.response, hhdm_req.response->offset);
+
+    extern uint8_t __bss_end[];
+    uint64_t kernel_end_phys = 0;
+    if (kaddr_req.response) {
+        uint64_t kphys = kaddr_req.response->physical_base;
+        uint64_t kvirt = kaddr_req.response->virtual_base;
+        kernel_end_phys = kphys + ((uint64_t) __bss_end - kvirt);
+    }
+
+    {
+        extern cpu_local_t g_cpu_local[MAX_CPUS];
+        g_cpu_local[0].cpu_id = 0;
+        wrmsr(0xC0000101, (uint64_t) &g_cpu_local[0]);
+        wrmsr(0xC0000102, (uint64_t) &g_cpu_local[0]);
+    }
+
+    pmm_init(mmap_req.response, hhdm_req.response->offset, kernel_end_phys);
 
     if (!fb_req.response || fb_req.response->framebuffer_count < 1) cpu_halt();
 
@@ -157,14 +288,17 @@ void kmain(void) {
     fb_init(lfb);
     fb_clear(COLOR_BG);
 
-    kprintf(COL_BOLD "k9" COL_RST " kernel is starting up " COL_GRN
-                     "Kyronix " KERNEL_VERSION " (x86_64)" COL_RST "\n\n");
+    kprintf(COL_BOLD "k9" COL_RST " kernel is starting up " COL_GRN "Kyronix " KERNEL_VERSION
+                     " (x86_64)" COL_RST "\n\n");
 
     kstatus("Initialising PMM", true);
+
     vmm_init();
     kstatus("Initialising VMM", true);
+
     lapic_init();
     kstatus("Initialising APIC", true);
+
     smp_init();
     {
         uint32_t eax = 7, ebx = 0, ecx = 0;
@@ -364,6 +498,8 @@ void kmain(void) {
         log_info("heap test: %s", heap_ok ? "PASS" : "FAIL");
         heap_stats();
     }
+
+    // run_mm_benchmarks();
 
     if (hhdm_req.response) log_info("hhdm offset : 0x%016lx", hhdm_req.response->offset);
 

@@ -1,8 +1,8 @@
 #include "syscall_setup.h"
 #include "cpu.h"
 #include "gdt.h"
-#include "percpu.h"
 #include "lib/log.h"
+#include "percpu.h"
 
 #define MSR_EFER 0xC0000080
 #define MSR_STAR 0xC0000081
@@ -38,7 +38,8 @@ void syscall_init(void) {
     cpu_enable_sse();
 
     wrmsr(MSR_EFER, rdmsr(MSR_EFER) | 1ULL);
-    wrmsr(MSR_STAR, ((uint64_t) (GDT_USER_DATA_SEL - 0x8) << 48) | ((uint64_t) GDT_KERNEL_CODE << 32));
+    wrmsr(MSR_STAR,
+          ((uint64_t) (GDT_USER_DATA_SEL - 0x8) << 48) | ((uint64_t) GDT_KERNEL_CODE << 32));
     wrmsr(MSR_LSTAR, (uint64_t) syscall_entry);
     wrmsr(MSR_SFMASK, (1ULL << 9) | (1ULL << 8) | (1ULL << 10) | (1ULL << 18));
 

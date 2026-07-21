@@ -54,15 +54,11 @@ static int64_t dev_urandom_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t
     return (int64_t) len;
 }
 
-
-
 /* add entropy when someone weite to /dev/random */
-static int64_t
-dev_random_write(vfs_node_t *n, const char *buf, uint64_t len)
-{
-	(void)n;
-	chacha20_rng_mix(&g_chacha20_rng, (const uint8_t *)buf, (size_t)len);
-	return (int64_t)len;
+static int64_t dev_random_write(vfs_node_t *n, const char *buf, uint64_t len) {
+    (void) n;
+    chacha20_rng_mix(&g_chacha20_rng, (const uint8_t *) buf, (size_t) len);
+    return (int64_t) len;
 }
 
 static int64_t dev_tty_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {

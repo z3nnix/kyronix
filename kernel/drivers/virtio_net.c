@@ -1,12 +1,12 @@
 #include "virtio_net.h"
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/idt.h"
+#include "../arch/x86_64/spinlock.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../net/net.h"
-#include "../arch/x86_64/spinlock.h"
 #include "pci.h"
 
 #define REG_DEVFEAT 0x00u
@@ -145,8 +145,7 @@ static bool setup_queue(uint16_t qidx, virtq_t *q) {
     if (!phys) return false;
 
 #ifdef CONFIG_KMEMLEAK
-    for (uint32_t i = 0; i < n; i++)
-        kmemleak_page_perm((void *)(phys + i * PAGE_SIZE));
+    for (uint32_t i = 0; i < n; i++) kmemleak_page_perm((void *) (phys + i * PAGE_SIZE));
 #endif
 
     vq_init(q, phys, sz);

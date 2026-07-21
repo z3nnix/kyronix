@@ -56,7 +56,10 @@ int64_t eventfd_read(vfs_file_t *f, char *buf, uint64_t len) {
             __builtin_memcpy(buf, &val, 8);
             return 8;
         }
-        if (f->flags & O_NONBLOCK) { spin_unlock(&e->lock); return -(int) EAGAIN; }
+        if (f->flags & O_NONBLOCK) {
+            spin_unlock(&e->lock);
+            return -(int) EAGAIN;
+        }
         proc_t *p = g_current_proc;
         e->waiter = p;
         spin_unlock(&e->lock);
@@ -87,8 +90,7 @@ int64_t eventfd_write(vfs_file_t *f, const char *buf, uint64_t len) {
     e->counter += val;
     if (e->waiter) {
         proc_t *w = (proc_t *) e->waiter;
-        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(w);
+        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
         e->waiter = NULL;
     }
     spin_unlock(&e->lock);

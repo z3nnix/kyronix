@@ -478,7 +478,7 @@ static void sntp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_a
                         LWIP_DEBUGF(SNTP_DEBUG_WARN,
                                     ("sntp_recv: Invalid originate timestamp in response\n"));
                     } else
-#endif              /* SNTP_CHECK_RESPONSE >= 2 */
+#endif /* SNTP_CHECK_RESPONSE >= 2 */
                     /* @todo: add code for SNTP_CHECK_RESPONSE >= 3 and >= 4 here */
                     {
                         /* correct answer */

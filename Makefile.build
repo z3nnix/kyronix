@@ -40,6 +40,7 @@ fi)
 CFLAGS := \
     -std=c11           \
     -O2                \
+    -DNDEBUG           \
     -Wall -Wextra      \
     -Wno-unused-parameter \
     -Wno-error         \
@@ -59,7 +60,9 @@ CFLAGS := \
     -Ikernel           \
     -Ikernel/boot      \
     -Ikernel/net       \
-    -I$(LWIP_SRC)/include
+    -Ikernel/mm        \
+    -I$(LWIP_SRC)/include \
+    -DNO_LOG
 
 LDFLAGS := \
     -T linker.ld       \
@@ -157,7 +160,14 @@ SRCS := \
     kernel/lib/log.c                   \
     kernel/lib/kallsyms.c             \
     kernel/mm/kmemleak.c              \
-    kernel/crypto/chacha20.c
+    kernel/crypto/chacha20.c          \
+    kernel/mm/llfree.c   \
+    kernel/mm/lower.c    \
+    kernel/mm/bitfield.c \
+    kernel/mm/trees.c    \
+    kernel/mm/tree.c     \
+    kernel/mm/local.c    \
+    kernel/mm/child.c
 
 ASM_SRCS := \
     kernel/arch/x86_64/idt_stubs.S    \

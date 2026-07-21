@@ -32,14 +32,17 @@ static block_hdr_t *heap_grow(uint64_t min_payload) {
     uint64_t need = min_payload + HDR_SIZE;
     if (need < GROW_BYTES) need = GROW_BYTES;
     need = (need + (PAGE_SIZE - 1)) & ~(uint64_t) (PAGE_SIZE - 1);
+    uint64_t npages = need / PAGE_SIZE;
 
     if (g_brk + need > HEAP_MAX) return NULL;
 
-    for (uint64_t va = g_brk; va < g_brk + need; va += PAGE_SIZE) {
-        void *phys = pmm_alloc();
-        if (!phys) return NULL;
-        if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
-            pmm_free(phys);
+    void *phys = pmm_alloc_contiguous(npages);
+    if (!phys) return NULL;
+
+    for (uint64_t i = 0; i < npages; i++) {
+        uint64_t va = g_brk + i * PAGE_SIZE;
+        if (vmm_map(&g_kernel_space, va, (uint64_t) phys + i * PAGE_SIZE, VMM_KDATA) < 0) {
+            for (uint64_t j = 0; j <= i; j++) pmm_free((void *) ((uint64_t) phys + j * PAGE_SIZE));
             return NULL;
         }
     }
@@ -190,8 +193,7 @@ void heap_walk_used(void (*callback)(void *data, uint64_t size, void *user), voi
     spin_lock(&g_heap_lock);
     block_hdr_t *b = g_head;
     while (b) {
-        if (!b->free)
-            callback((uint8_t *) b + HDR_SIZE, b->size, user);
+        if (!b->free) callback((uint8_t *) b + HDR_SIZE, b->size, user);
         b = b->next;
     }
     spin_unlock(&g_heap_lock);

@@ -269,8 +269,7 @@ int fd_connect_unix(int fd, const char *path) {
     sn->sock_backlog++;
     if (srv->accept_waiter) {
         proc_t *w = srv->accept_waiter;
-        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(w);
+        if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     }
     spin_unlock(&srv->lock);
     vfs_node_unref_internal(sn);

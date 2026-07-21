@@ -153,7 +153,10 @@ int64_t sys_getpgrp(void) { return cur() ? (int64_t) cur()->pgid : 1; }
 int64_t sys_getpgid(uint64_t pid) {
     if (pid == 0) return sys_getpgrp();
     proc_t *p = proc_find((uint32_t) pid);
-    if (!p || !jail_can_see(cur(), p)) { if (p) proc_unref(p); return -(int64_t) ESRCH; }
+    if (!p || !jail_can_see(cur(), p)) {
+        if (p) proc_unref(p);
+        return -(int64_t) ESRCH;
+    }
     int64_t pgid = (int64_t) p->pgid;
     proc_unref(p);
     return pgid;
@@ -167,9 +170,15 @@ int64_t sys_setsid(void) {
 int64_t sys_setpgid(uint64_t pid, uint64_t pgid) {
     proc_t *p = pid ? proc_find((uint32_t) pid) : cur();
     if (!p) return -(int64_t) ESRCH;
-    if (!jail_can_see(cur(), p)) { if (pid) proc_unref(p); return -(int64_t) ESRCH; }
+    if (!jail_can_see(cur(), p)) {
+        if (pid) proc_unref(p);
+        return -(int64_t) ESRCH;
+    }
     if (pgid == 0) pgid = p->pid;
-    if (pgid > PROC_MAX) { if (pid) proc_unref(p); return -(int64_t) EINVAL; }
+    if (pgid > PROC_MAX) {
+        if (pid) proc_unref(p);
+        return -(int64_t) EINVAL;
+    }
     p->pgid = (int) pgid;
     if (pid) proc_unref(p);
     return 0;

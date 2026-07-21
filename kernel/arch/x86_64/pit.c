@@ -36,8 +36,7 @@ static uint64_t rtc_read_unix(void) {
         yr = bcd2bin(yr);
         cen = bcd2bin(cen);
     }
-    if (!(sb & 0x02) && (hr & 0x80))
-        hr = (uint8_t) (((hr & 0x7fu) % 12u) + 12u);
+    if (!(sb & 0x02) && (hr & 0x80)) hr = (uint8_t) (((hr & 0x7fu) % 12u) + 12u);
 
     uint32_t year = (uint32_t) (cen ? cen * 100u : 2000u) + yr;
 

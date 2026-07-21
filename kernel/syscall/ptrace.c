@@ -1,8 +1,8 @@
 #include "ptrace.h"
 
-#include "internal.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
+#include "internal.h"
 #include "lib/string.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
@@ -136,7 +136,8 @@ static int64_t ptrace_rw_mem(proc_t *target, uint64_t addr, void *kbuf, uint64_t
     g_current_space = target->space;
     vmm_switch(target->space);
 
-    int ok = write ? uptr_ok_w((void *) (uintptr_t) addr, len) : uptr_ok((void *) (uintptr_t) addr, len);
+    int ok =
+        write ? uptr_ok_w((void *) (uintptr_t) addr, len) : uptr_ok((void *) (uintptr_t) addr, len);
     if (ok) {
         if (write)
             memcpy((void *) (uintptr_t) addr, kbuf, len);
@@ -159,67 +160,95 @@ int64_t sys_ptrace(int64_t request, int64_t pid, uint64_t addr, uint64_t data) {
     }
 
     proc_t *t = proc_find((uint32_t) pid);
-    if (!t || t->state == PROC_UNUSED) { if (t) proc_unref(t); return -(int64_t) ESRCH; }
+    if (!t || t->state == PROC_UNUSED) {
+        if (t) proc_unref(t);
+        return -(int64_t) ESRCH;
+    }
 
     int64_t rc = 0;
 
     if (request == PTRACE_ATTACH) {
-        if (t->tracer_pid) { rc = -(int64_t) EPERM; goto out; }
+        if (t->tracer_pid) {
+            rc = -(int64_t) EPERM;
+            goto out;
+        }
         t->tracer_pid = self->pid;
         proc_send_signal(t, SIGSTOP);
         goto out;
     }
 
-    if (t->tracer_pid != self->pid) { rc = -(int64_t) ESRCH; goto out; }
+    if (t->tracer_pid != self->pid) {
+        rc = -(int64_t) ESRCH;
+        goto out;
+    }
 
     switch (request) {
     case PTRACE_PEEKTEXT:
     case PTRACE_PEEKDATA: {
         uint64_t val = 0;
-        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 0) < 0) { rc = -(int64_t) EIO; goto out; }
-        if (!uptr_ok_w((void *) data, sizeof(val))) { rc = -(int64_t) EFAULT; goto out; }
+        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 0) < 0) {
+            rc = -(int64_t) EIO;
+            goto out;
+        }
+        if (!uptr_ok_w((void *) data, sizeof(val))) {
+            rc = -(int64_t) EFAULT;
+            goto out;
+        }
         *(uint64_t *) data = val;
         break;
     }
     case PTRACE_POKETEXT:
     case PTRACE_POKEDATA: {
         uint64_t val = data;
-        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 1) < 0) { rc = -(int64_t) EIO; goto out; }
+        if (ptrace_rw_mem(t, addr, &val, sizeof(val), 1) < 0) {
+            rc = -(int64_t) EIO;
+            goto out;
+        }
         break;
     }
     case PTRACE_GETREGS: {
         struct ptrace_user_regs regs;
         ptrace_fill_regs(t, &regs);
-        if (!uptr_ok_w((void *) data, sizeof(regs))) { rc = -(int64_t) EFAULT; goto out; }
+        if (!uptr_ok_w((void *) data, sizeof(regs))) {
+            rc = -(int64_t) EFAULT;
+            goto out;
+        }
         memcpy((void *) data, &regs, sizeof(regs));
         break;
     }
     case PTRACE_SETREGS: {
         struct ptrace_user_regs regs;
-        if (!uptr_ok((void *) data, sizeof(regs))) { rc = -(int64_t) EFAULT; goto out; }
+        if (!uptr_ok((void *) data, sizeof(regs))) {
+            rc = -(int64_t) EFAULT;
+            goto out;
+        }
         memcpy(&regs, (void *) data, sizeof(regs));
-        if (ptrace_store_regs(t, &regs) < 0) { rc = -(int64_t) EIO; goto out; }
+        if (ptrace_store_regs(t, &regs) < 0) {
+            rc = -(int64_t) EIO;
+            goto out;
+        }
         break;
     }
     case PTRACE_CONT:
     case PTRACE_SYSCALL:
     case PTRACE_SINGLESTEP:
-        if (!t->ptrace_stopped) { rc = -(int64_t) ESRCH; goto out; }
+        if (!t->ptrace_stopped) {
+            rc = -(int64_t) ESRCH;
+            goto out;
+        }
         if ((int) data > 0 && (int) data < NSIG)
             __atomic_fetch_or(&t->pending_sigs, (1ULL << ((int) data - 1)), __ATOMIC_RELAXED);
         t->ptrace_syscall_trace = (request == PTRACE_SYSCALL);
         t->ptrace_step = (request == PTRACE_SINGLESTEP);
         t->ptrace_stopped = 0;
         t->ptrace_reported = 0;
-        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(t);
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY)) proc_set_ready(t);
         break;
     case PTRACE_KILL:
         __atomic_fetch_or(&t->pending_sigs, (1ULL << (SIGKILL - 1)), __ATOMIC_RELAXED);
         t->ptrace_stopped = 0;
         t->ptrace_reported = 0;
-        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(t);
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY)) proc_set_ready(t);
         break;
     case PTRACE_DETACH:
         t->tracer_pid = 0;

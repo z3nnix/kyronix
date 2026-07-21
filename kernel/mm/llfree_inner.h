@@ -1,0 +1,22 @@
+#pragma once
+
+#include "llfree.h"
+
+#include "local.h"
+#include "lower.h"
+#include "trees.h"
+
+/// The llfree metadata
+typedef struct __attribute__((aligned(LLFREE_CACHE_SIZE))) llfree {
+    /// Lower allocator
+    lower_t lower;
+    /// Cpu-local data
+    local_t *local;
+    /// Manages the tree array
+    trees_t trees;
+
+    /// Policy function for class-based allocation
+    llfree_policy_fn policy;
+    /// Number of classes
+    uint8_t num_classes;
+} llfree_t;

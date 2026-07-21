@@ -26,11 +26,11 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     evdev_t *e = &g_evdev[dev];
     int next = (e->head + 1) % EVBUF;
     if (next == e->tail) return; /* full, drop */
-    e->buf[e->head] = (input_event_t){ .sec = g_ticks / 1000,
-                                       .usec = (g_ticks % 1000) * 1000,
-                                       .type = type,
-                                       .code = code,
-                                       .value = value };
+    e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
+                                        .usec = (g_ticks % 1000) * 1000,
+                                        .type = type,
+                                        .code = code,
+                                        .value = value };
     e->head = next;
     if (e->waiter && e->waiter->state == PROC_WAITING) {
         e->waiter->state = PROC_READY;

@@ -5,16 +5,12 @@
 
 static inline void spin_lock(spinlock_t *s) {
     for (;;) {
-        if (__sync_bool_compare_and_swap(&s->lock, 0, 1))
-            break;
-        while (__atomic_load_n(&s->lock, __ATOMIC_RELAXED))
-            cpu_relax();
+        if (__sync_bool_compare_and_swap(&s->lock, 0, 1)) break;
+        while (__atomic_load_n(&s->lock, __ATOMIC_RELAXED)) cpu_relax();
     }
 }
 
-static inline void spin_unlock(spinlock_t *s) {
-    __atomic_store_n(&s->lock, 0, __ATOMIC_RELEASE);
-}
+static inline void spin_unlock(spinlock_t *s) { __atomic_store_n(&s->lock, 0, __ATOMIC_RELEASE); }
 
 static inline int spin_trylock(spinlock_t *s) {
     return __sync_bool_compare_and_swap(&s->lock, 0, 1);
@@ -54,8 +50,7 @@ static inline void kernel_lock(void) {
             __atomic_store_n(&g_kernel_lock.owner, cpu, __ATOMIC_RELAXED);
             return;
         }
-        while (__atomic_load_n(&g_kernel_lock.lock, __ATOMIC_RELAXED))
-            cpu_relax();
+        while (__atomic_load_n(&g_kernel_lock.lock, __ATOMIC_RELAXED)) cpu_relax();
     }
 }
 

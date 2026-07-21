@@ -132,7 +132,7 @@ struct limine_module_request {
     void **internal_modules;
 };
 
-#define LIMINE_KERNEL_ADDRESS_REQUEST \
+#define LIMINE_KERNEL_ADDRESS_REQUEST                                                              \
     { LIMINE_COMMON_MAGIC, 0x71ba76863cc55f63, 0xb2644a48c516a487 }
 
 struct limine_kernel_address_response {

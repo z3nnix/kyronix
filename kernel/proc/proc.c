@@ -161,7 +161,7 @@ proc_t *proc_find(uint32_t pid) {
 }
 
 proc_t *proc_next_ready(proc_t *skip) {
-    static uint32_t g_last_scheduled[MAX_CPUS] = {0};
+    static uint32_t g_last_scheduled[MAX_CPUS] = { 0 };
     uint32_t cpu = this_cpu_id();
     uint64_t ready = __atomic_load_n(&g_ready_mask, __ATOMIC_RELAXED);
     int start = ((int) g_last_scheduled[cpu] + 1) % PROC_MAX;
@@ -330,9 +330,7 @@ void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t 
         proc_unref(tracer);
     }
 
-    while (p->ptrace_stopped) {
-        sched_yield_blocking();
-    }
+    while (p->ptrace_stopped) { sched_yield_blocking(); }
 
     if (rflags_slot) {
         if (p->ptrace_step) {

@@ -8,8 +8,7 @@ static int g_count = 0;
 
 void block_init(void) {
     g_count = 0;
-    for (int i = 0; i < BLOCK_MAX_DEVICES; i++)
-        g_devices[i] = NULL;
+    for (int i = 0; i < BLOCK_MAX_DEVICES; i++) g_devices[i] = NULL;
 }
 
 void block_register(struct block_device *dev) {
@@ -17,9 +16,7 @@ void block_register(struct block_device *dev) {
     g_devices[g_count++] = dev;
 }
 
-int block_count(void) {
-    return g_count;
-}
+int block_count(void) { return g_count; }
 
 struct block_device *block_get(int index) {
     if (index < 0 || index >= g_count) return NULL;
@@ -28,8 +25,7 @@ struct block_device *block_get(int index) {
 
 struct block_device *block_by_name(const char *name) {
     for (int i = 0; i < g_count; i++) {
-        if (strcmp(g_devices[i]->name, name) == 0)
-            return g_devices[i];
+        if (strcmp(g_devices[i]->name, name) == 0) return g_devices[i];
     }
     return NULL;
 }

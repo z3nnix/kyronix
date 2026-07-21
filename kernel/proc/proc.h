@@ -66,22 +66,22 @@ typedef struct proc {
     uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
     uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
 
-    uint32_t tracer_pid;        /* 0 = not traced */
-    uint8_t ptrace_stopped;     /* currently in ptrace-stop, waiting for tracer */
-    uint8_t ptrace_reported;    /* this stop was already handed back via wait4 */
-    uint8_t ptrace_stop_sig;    /* signal reported to the tracer for this stop */
+    uint32_t tracer_pid;          /* 0 = not traced */
+    uint8_t ptrace_stopped;       /* currently in ptrace-stop, waiting for tracer */
+    uint8_t ptrace_reported;      /* this stop was already handed back via wait4 */
+    uint8_t ptrace_stop_sig;      /* signal reported to the tracer for this stop */
     uint8_t ptrace_syscall_trace; /* PTRACE_SYSCALL: stop at syscall enter/exit */
-    uint8_t ptrace_in_syscall;   /* toggles enter/exit for PTRACE_SYSCALL */
-    uint8_t ptrace_step;         /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
-    uint8_t ptrace_frame_kind;   /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
-    void *ptrace_frame;          /* frame the tracee is stopped in, valid while stopped */
-    uint64_t ptrace_orig_rax;    /* syscall nr as of entry; rax itself gets clobbered by the
+    uint8_t ptrace_in_syscall;    /* toggles enter/exit for PTRACE_SYSCALL */
+    uint8_t ptrace_step;          /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
+    uint8_t ptrace_frame_kind;    /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
+    void *ptrace_frame;           /* frame the tracee is stopped in, valid while stopped */
+    uint64_t ptrace_orig_rax;     /* syscall nr as of entry; rax itself gets clobbered by the
                                    * return value before an exit-stop can report it */
 
     uint8_t stop_sig;      /* job-control (SIGTSTP/SIGSTOP) stop signal, valid while PROC_STOPPED */
     uint8_t stop_reported; /* this stop was already handed back via wait4(WUNTRACED) */
     uint8_t job_stopped;   /* loop condition for proc_job_stop(); state alone can't be used since
-                             * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
+                            * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
@@ -92,7 +92,7 @@ extern volatile uint64_t g_ready_mask;
 extern volatile uint64_t g_used_mask;
 extern volatile uint64_t g_timer_mask;
 
-static inline int proc_slot(proc_t *p) { return (int)(p - g_proctable); }
+static inline int proc_slot(proc_t *p) { return (int) (p - g_proctable); }
 
 static inline void proc_set_ready(proc_t *p) {
     int bit = proc_slot(p);
@@ -118,9 +118,7 @@ static inline void proc_set_timer(proc_t *p) {
     __atomic_fetch_or(&g_timer_mask, 1ULL << proc_slot(p), __ATOMIC_RELAXED);
 }
 
-static inline void proc_ref(proc_t *p) {
-    __atomic_fetch_add(&p->refcount, 1, __ATOMIC_RELAXED);
-}
+static inline void proc_ref(proc_t *p) { __atomic_fetch_add(&p->refcount, 1, __ATOMIC_RELAXED); }
 
 void proc_kstack_free(proc_t *p);
 

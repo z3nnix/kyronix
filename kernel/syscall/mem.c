@@ -1,7 +1,7 @@
 #include "mem.h"
 
-#include "internal.h"
 #include "fs/vfs.h"
+#include "internal.h"
 #include "lib/string.h"
 #include "mm/pmm.h"
 #include "mm/vma.h"
@@ -195,8 +195,7 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
         if (reserve_only) return (int64_t) va;
 
         /* Lazily load file data if filesystem hasn't populated fn->data yet (ext2) */
-        if (!fn->data && fn->fs_ops && fn->fs_ops->read)
-            fn->fs_ops->read(fn, NULL, 0, 0);
+        if (!fn->data && fn->fs_ops && fn->fs_ops->read) fn->fs_ops->read(fn, NULL, 0, 0);
 
         /* file-backed: MAP_PRIVATE - allocate pages and copy file content */
         uint64_t file_size = fn->size;

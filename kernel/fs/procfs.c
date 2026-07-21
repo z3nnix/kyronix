@@ -1,11 +1,11 @@
 #include "procfs.h"
-#include "version.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mm/heap.h"
+#include "version.h"
 #ifdef CONFIG_KMEMLEAK
 #include "mm/kmemleak.h"
 #endif
@@ -113,10 +113,10 @@ static int64_t proc_cpuinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     if (family == 15) family = ext_family + family;
     if (family == 6 || family == 15) model = (ext_model << 4) | model;
 
-    char brand[49] = {0};
+    char brand[49] = { 0 };
     cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
     if (eax >= 0x80000004) {
-        uint32_t *b = (uint32_t *)brand;
+        uint32_t *b = (uint32_t *) brand;
         cpuid(0x80000002, &b[0], &b[1], &b[2], &b[3]);
         cpuid(0x80000003, &b[4], &b[5], &b[6], &b[7]);
         cpuid(0x80000004, &b[8], &b[9], &b[10], &b[11]);
@@ -139,13 +139,14 @@ static int64_t proc_cpuinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     char flags[512];
     int fpos = 0;
 
-#define ADD_FLAG(cond, name) do { \
-    if (cond) { \
-        if (fpos > 0) flags[fpos++] = ' '; \
-        int _n = snprintf(flags + fpos, (int)(sizeof(flags) - (uint64_t)fpos), "%s", name); \
-        if (_n > 0) fpos += _n; \
-    } \
-} while (0)
+#define ADD_FLAG(cond, name)                                                                       \
+    do {                                                                                           \
+        if (cond) {                                                                                \
+            if (fpos > 0) flags[fpos++] = ' ';                                                     \
+            int _n = snprintf(flags + fpos, (int) (sizeof(flags) - (uint64_t) fpos), "%s", name);  \
+            if (_n > 0) fpos += _n;                                                                \
+        }                                                                                          \
+    } while (0)
 
     ADD_FLAG(feat_edx & (1 << 0), "fpu");
     ADD_FLAG(feat_edx & (1 << 4), "tsc");
@@ -627,11 +628,16 @@ static int64_t proc_kmemleak_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 
 static const char *klog_level_name(int level) {
     switch (level) {
-    case KLOG_ERROR: return "error";
-    case KLOG_WARN:  return "warn";
-    case KLOG_INFO:  return "info";
-    case KLOG_DEBUG: return "debug";
-    default:         return "?";
+    case KLOG_ERROR:
+        return "error";
+    case KLOG_WARN:
+        return "warn";
+    case KLOG_INFO:
+        return "info";
+    case KLOG_DEBUG:
+        return "debug";
+    default:
+        return "?";
     }
 }
 
@@ -645,8 +651,7 @@ static int64_t proc_loglevel_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 
 static int64_t proc_loglevel_write(vfs_node_t *n, const char *buf, uint64_t len) {
     (void) n;
-    if (g_current_proc && g_current_proc->euid != 0)
-        return -(int64_t) EPERM;
+    if (g_current_proc && g_current_proc->euid != 0) return -(int64_t) EPERM;
     char c = buf[0];
     int v = c - '0';
     if (v >= 0 && v <= 3) {
@@ -689,7 +694,7 @@ void procfs_init(void) {
     vfs_create_chr("/proc/self/stat", proc_self_stat_read, NULL);
     vfs_create_chr("/proc/self/maps", proc_self_maps_read, NULL);
 
-    vfs_node_t *pm =     vfs_create_chr("/proc/self/pagemap", proc_self_pagemap_read, NULL);
+    vfs_node_t *pm = vfs_create_chr("/proc/self/pagemap", proc_self_pagemap_read, NULL);
     if (pm) pm->mode = S_IFCHR | 0400;
 
     vfs_node_t *ll = vfs_create_chr("/proc/loglevel", proc_loglevel_read, proc_loglevel_write);

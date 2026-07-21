@@ -40,7 +40,7 @@ void request_irq(uint8_t irq, void (*fn)(int, void *), void *arg) {
 extern uint64_t isr_stub_table[];
 
 static void idt_set_gate(uint8_t vec, uint64_t handler, uint8_t type) {
-    g_idt[vec] = (idt_entry_t){
+    g_idt[vec] = (idt_entry_t) {
         .offset_low = (uint16_t) (handler & 0xFFFF),
         .selector = GDT_KERNEL_CODE,
         .ist = 0,
@@ -74,13 +74,11 @@ void idt_init(void) {
     idt_set_gate(LAPIC_SPURIOUS_VEC, isr_stub_table[50], IDT_INT_GATE);
 
     g_idtr.limit = (uint16_t) (sizeof(g_idt) - 1);
-    g_idtr.base  = (uint64_t) g_idt;
+    g_idtr.base = (uint64_t) g_idt;
     __asm__ volatile("lidt %0" ::"m"(g_idtr) : "memory");
 }
 
-void idt_load_ap(void) {
-    __asm__ volatile("lidt %0" ::"m"(g_idtr) : "memory");
-}
+void idt_load_ap(void) { __asm__ volatile("lidt %0" ::"m"(g_idtr) : "memory"); }
 
 static const char *const exc_name[] = {
     "#DE Divide Error",

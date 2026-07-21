@@ -36,9 +36,7 @@ void proc_send_signal(struct proc *p, int sig) {
 
     __atomic_fetch_or(&pp->pending_sigs, (1ULL << (sig - 1)), __ATOMIC_RELAXED);
 
-    if (__sync_bool_compare_and_swap(&pp->state, PROC_WAITING, PROC_READY)) {
-        proc_set_ready(pp);
-    }
+    if (__sync_bool_compare_and_swap(&pp->state, PROC_WAITING, PROC_READY)) { proc_set_ready(pp); }
 }
 
 static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {

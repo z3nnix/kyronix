@@ -1,19 +1,17 @@
 #include "lapic.h"
 #include "cpu.h"
-#include "pit.h"
-#include "percpu.h"
+#include "lib/log.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
-#include "lib/log.h"
+#include "percpu.h"
+#include "pit.h"
 
 static volatile uint32_t *g_lapic = NULL;
 static uint32_t g_lapic_timer_freq = 0; /* ticks per ms */
 
 #define LAPIC_VIRT 0xfffffe0000000000ULL
 
-static volatile uint32_t *lapic_reg(uint16_t off) {
-    return &g_lapic[off / 4];
-}
+static volatile uint32_t *lapic_reg(uint16_t off) { return &g_lapic[off / 4]; }
 
 void lapic_write(uint16_t reg, uint32_t val) {
     if (g_lapic) *lapic_reg(reg) = val;
@@ -33,8 +31,7 @@ void lapic_init(void) {
 
     uint64_t lapic_phys = apic_base & 0xFFFFFFFFFFFFF000ULL;
 
-    int r = vmm_map(&g_kernel_space, LAPIC_VIRT, lapic_phys,
-                    VMM_KDATA | VMM_PCD);
+    int r = vmm_map(&g_kernel_space, LAPIC_VIRT, lapic_phys, VMM_KDATA | VMM_PCD);
     if (r < 0) {
         log_warn("LAPIC: failed to map MMIO at %p", (void *) lapic_phys);
         return;
@@ -44,9 +41,9 @@ void lapic_init(void) {
     uint32_t svr = *lapic_reg(LAPIC_SVR) & 0xFFFFFF00;
     *lapic_reg(LAPIC_SVR) = svr | LAPIC_SVR_ENABLE | LAPIC_SPURIOUS_VEC;
 
-    *lapic_reg(LAPIC_LVT_ERROR)  = LAPIC_LVT_MASKED;
+    *lapic_reg(LAPIC_LVT_ERROR) = LAPIC_LVT_MASKED;
     *lapic_reg(LAPIC_LVT_THERMAL) = LAPIC_LVT_MASKED;
-    *lapic_reg(LAPIC_LVT_PERF)   = LAPIC_LVT_MASKED;
+    *lapic_reg(LAPIC_LVT_PERF) = LAPIC_LVT_MASKED;
 
     *lapic_reg(LAPIC_TPR) = 0;
 
@@ -71,20 +68,16 @@ void lapic_eoi(void) {
 void lapic_send_ipi(uint32_t lapic_id, uint32_t icr_lo) {
     if (!g_lapic) return;
 
-    while (*lapic_reg(LAPIC_ICR_LO) & ICR_SEND_PENDING)
-        cpu_relax();
+    while (*lapic_reg(LAPIC_ICR_LO) & ICR_SEND_PENDING) cpu_relax();
 
     *lapic_reg(LAPIC_ICR_HI) = (uint32_t) lapic_id << 24;
 
     *lapic_reg(LAPIC_ICR_LO) = icr_lo;
 
-    while (*lapic_reg(LAPIC_ICR_LO) & ICR_SEND_PENDING)
-        cpu_relax();
+    while (*lapic_reg(LAPIC_ICR_LO) & ICR_SEND_PENDING) cpu_relax();
 }
 
-void lapic_send_ipi_self(uint32_t icr_lo) {
-    lapic_send_ipi(0, icr_lo | ICR_DEST_SELF);
-}
+void lapic_send_ipi_self(uint32_t icr_lo) { lapic_send_ipi(0, icr_lo | ICR_DEST_SELF); }
 
 static inline uint16_t pit_read_counter(void) {
     outb(PIT_CMD, 0x00); /* latch channel 0 */
@@ -109,8 +102,7 @@ void lapic_calibrate_timer(void) {
     int ticks = 0;
     while (ticks < 5) {
         uint16_t cur = pit_read_counter();
-        if (cur > prev)
-            ticks++;
+        if (cur > prev) ticks++;
         prev = cur;
         cpu_relax();
     }
@@ -122,8 +114,7 @@ void lapic_calibrate_timer(void) {
     *lapic_reg(LAPIC_LVT_TIMER) = LAPIC_LVT_MASKED;
     *lapic_reg(LAPIC_TIMER_ICOUNT) = 0;
 
-    log_info("LAPIC timer: %u ticks/ms  (%u Hz)",
-             g_lapic_timer_freq, g_lapic_timer_freq * 1000);
+    log_info("LAPIC timer: %u ticks/ms  (%u Hz)", g_lapic_timer_freq, g_lapic_timer_freq * 1000);
 }
 
 void lapic_timer_start_periodic(uint32_t hz) {
@@ -135,6 +126,4 @@ void lapic_timer_start_periodic(uint32_t hz) {
     *lapic_reg(LAPIC_TIMER_ICOUNT) = count;
 }
 
-uint32_t lapic_timer_freq(void) {
-    return g_lapic_timer_freq;
-}
+uint32_t lapic_timer_freq(void) { return g_lapic_timer_freq; }

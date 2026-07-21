@@ -1,6 +1,6 @@
 #include "gdt.h"
-#include <stddef.h>
 #include "percpu.h"
+#include <stddef.h>
 
 typedef struct {
     uint32_t reserved0;
@@ -58,7 +58,7 @@ static void tss_init(tss_t *tss) {
 
 static void gdt_set_tss_desc(uint32_t cpu_id, uint64_t base) {
     uint32_t limit = (uint32_t) (sizeof(tss_t) - 1);
-    g_gdt.tss[cpu_id] = (tss_desc_t){
+    g_gdt.tss[cpu_id] = (tss_desc_t) {
         .limit_lo = (uint16_t) (limit & 0xFFFF),
         .base_lo = (uint16_t) (base & 0xFFFF),
         .base_mid = (uint8_t) ((base >> 16) & 0xFF),
@@ -110,7 +110,7 @@ void gdt_init(void) {
     gdt_load_and_set_segments();
 
     uint16_t tss_sel = GDT_TSS_SEL(0);
-    __asm__ volatile("ltr %0" :: "r"(tss_sel) : "memory");
+    __asm__ volatile("ltr %0" ::"r"(tss_sel) : "memory");
 }
 
 void gdt_ap_load(uint32_t cpu_id) {
@@ -121,7 +121,7 @@ void gdt_ap_load(uint32_t cpu_id) {
     gdt_load_and_set_segments();
 
     uint16_t tss_sel = GDT_TSS_SEL(cpu_id);
-    __asm__ volatile("ltr %0" :: "r"(tss_sel) : "memory");
+    __asm__ volatile("ltr %0" ::"r"(tss_sel) : "memory");
 }
 
 void gdt_set_kernel_stack(uint64_t rsp0) {

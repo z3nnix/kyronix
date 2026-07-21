@@ -51,8 +51,9 @@ static const char *const g_psHTTPHeaderStrings[] = {
 #define HTTP_HDR_SERVER 12         /* Server: HTTPD_SERVER_AGENT */
 #define DEFAULT_404_HTML 13        /* default 404 body */
 #if LWIP_HTTPD_SUPPORT_11_KEEPALIVE
-#define DEFAULT_404_HTML_PERSISTENT 14 /* default 404 body, but including Connection: keep-alive   \
-                                        */
+#define DEFAULT_404_HTML_PERSISTENT                                                                \
+    14 /* default 404 body, but including Connection: keep-alive                                   \
+        */
 #endif
 
 #define HTTP_CONTENT_TYPE(contenttype) "Content-Type: " contenttype "\r\n\r\n"

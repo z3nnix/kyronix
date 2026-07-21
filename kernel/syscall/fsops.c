@@ -1,12 +1,12 @@
 #include "fsops.h"
 
-#include "internal.h"
-#include "version.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
+#include "internal.h"
 #include "lib/string.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "version.h"
 
 int64_t sys_uname(struct utsname *buf) {
     if (!buf) return -(int64_t) EFAULT;

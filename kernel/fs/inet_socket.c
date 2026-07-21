@@ -123,8 +123,7 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
     pbuf_free(p);
 
     proc_t *w = c->rx_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     return ERR_OK;
 }
 
@@ -137,8 +136,7 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
         c->err_code = -(int) ECONNREFUSED;
     }
     proc_t *w = c->connect_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     return ERR_OK;
 }
 
@@ -150,11 +148,9 @@ static void on_err(void *arg, err_t err) {
     c->err_code = -(int) ECONNREFUSED;
     c->pcb = NULL; /* already freed by lwIP */
     proc_t *w = c->connect_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     proc_t *r = c->rx_waiter;
-    if (r && __sync_bool_compare_and_swap(&r->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(r);
+    if (r && __sync_bool_compare_and_swap(&r->state, PROC_WAITING, PROC_READY)) proc_set_ready(r);
 }
 
 static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
@@ -185,8 +181,7 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
     }
 
     proc_t *w = srv->accept_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     spin_unlock(&srv->accept_lock);
 
     tcp_accepted(srv->pcb);
@@ -218,8 +213,7 @@ static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip
 
     c->udq_head = next;
     proc_t *w = c->rx_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
 }
 
 static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip4_addr_t *addr) {
@@ -241,8 +235,7 @@ static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const
     c->udq_head = next;
     pbuf_free(p);
     proc_t *w = c->rx_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     return 1; /* consumed */
 }
 

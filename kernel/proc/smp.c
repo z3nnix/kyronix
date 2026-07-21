@@ -1,15 +1,15 @@
 #include "smp.h"
-#include "proc.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
-#include "arch/x86_64/lapic.h"
 #include "arch/x86_64/idt.h"
+#include "arch/x86_64/lapic.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "boot/limine.h"
+#include "fs/vfs.h"
 #include "lib/log.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
-#include "fs/vfs.h"
+#include "proc.h"
 #include "syscall/syscall.h"
 
 #define MSR_EFER 0xC0000080
@@ -39,8 +39,7 @@ void smp_init(void) {
     struct limine_smp_response *resp = smp_req.response;
     g_cpu_count = (uint32_t) resp->cpu_count;
 
-    log_info("SMP: %u CPU(s) detected  BSP lapic=%u",
-             g_cpu_count, resp->bsp_lapic_id);
+    log_info("SMP: %u CPU(s) detected  BSP lapic=%u", g_cpu_count, resp->bsp_lapic_id);
 
     uint32_t bsp_lapic = resp->bsp_lapic_id;
     uint32_t next_id = 1;
@@ -102,8 +101,8 @@ void __attribute__((noreturn)) ap_init_cpu(cpu_local_t *cpu) {
     cpu_enable_sse();
 
     wrmsr(MSR_EFER, rdmsr(MSR_EFER) | (1ULL << 0) | (1ULL << 11));
-    wrmsr(MSR_STAR, ((uint64_t) (GDT_USER_DATA_SEL - 0x8) << 48) |
-                     ((uint64_t) GDT_KERNEL_CODE << 32));
+    wrmsr(MSR_STAR,
+          ((uint64_t) (GDT_USER_DATA_SEL - 0x8) << 48) | ((uint64_t) GDT_KERNEL_CODE << 32));
     wrmsr(MSR_LSTAR, (uint64_t) syscall_entry);
     wrmsr(MSR_SFMASK, (1ULL << 9) | (1ULL << 8) | (1ULL << 10) | (1ULL << 18));
 
@@ -120,8 +119,7 @@ void __attribute__((noreturn)) ap_init_cpu(cpu_local_t *cpu) {
     __atomic_fetch_add(&g_aps_ready, 1, __ATOMIC_RELEASE);
     cpu->online = 1;
 
-    while (__atomic_load_n(&g_kernel_ready, __ATOMIC_ACQUIRE) == 0)
-        cpu_relax();
+    while (__atomic_load_n(&g_kernel_ready, __ATOMIC_ACQUIRE) == 0) cpu_relax();
 
     lapic_timer_start_periodic(250);
 
@@ -153,8 +151,7 @@ void smp_boot_aps(void) {
     }
 
     uint32_t expected_aps = g_cpu_count - 1;
-    while (__atomic_load_n(&g_aps_ready, __ATOMIC_ACQUIRE) < expected_aps)
-        cpu_relax();
+    while (__atomic_load_n(&g_aps_ready, __ATOMIC_ACQUIRE) < expected_aps) cpu_relax();
 
     log_info("SMP: all %u AP(s) online, waiting for kernel ready", expected_aps);
 }

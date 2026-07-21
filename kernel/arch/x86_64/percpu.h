@@ -6,17 +6,19 @@ typedef struct {
     volatile uint64_t lock;
 } spinlock_t;
 
-#define SPINLOCK_INIT ((spinlock_t){ .lock = 0 })
-#define this_cpu_ptr() (__extension__({ \
-    uint32_t __id; \
-    __asm__ volatile("movl %%gs:16, %0" : "=r"(__id)); \
-    &g_cpu_local[__id]; \
-}))
+#define SPINLOCK_INIT ((spinlock_t) { .lock = 0 })
+#define this_cpu_ptr()                                                                             \
+    (__extension__({                                                                               \
+        uint32_t __id;                                                                             \
+        __asm__ volatile("movl %%gs:16, %0" : "=r"(__id));                                         \
+        &g_cpu_local[__id];                                                                        \
+    }))
 
-#define per_cpu_field(field) (*(__extension__({ \
-    cpu_local_t *__p = this_cpu_ptr(); \
-    (volatile __typeof__(__p->field) *) &(__p->field); \
-})))
+#define per_cpu_field(field)                                                                       \
+    (*(__extension__({                                                                             \
+        cpu_local_t *__p = this_cpu_ptr();                                                         \
+        (volatile __typeof__(__p->field) *) &(__p->field);                                         \
+    })))
 
 #define g_current_space per_cpu_field(current_space)
 
@@ -29,14 +31,14 @@ typedef struct {
     uint64_t user_rsp;
     uint32_t cpu_id;
     uint32_t lapic_id;
-    uint8_t  online;
-    uint8_t  __pad0[7];
-    void    *current;
-    void    *idle;
-    void    *current_space;
-    void    *g_fds_ptr;
-    void    *reap_thread;
-    uint8_t  __pad1[8];
+    uint8_t online;
+    uint8_t __pad0[7];
+    void *current;
+    void *idle;
+    void *current_space;
+    void *g_fds_ptr;
+    void *reap_thread;
+    uint8_t __pad1[8];
 } cpu_local_t;
 
 _Static_assert(__builtin_offsetof(cpu_local_t, kernel_rsp) == 0, "gs:0");
@@ -66,10 +68,6 @@ static inline uint32_t this_cpu_lapic_id(void) {
     return id;
 }
 
-static inline int cpu_online(uint32_t cpu_id) {
-    return g_cpu_local[cpu_id].online;
-}
+static inline int cpu_online(uint32_t cpu_id) { return g_cpu_local[cpu_id].online; }
 
-static inline void cpu_set_online(uint32_t cpu_id) {
-    g_cpu_local[cpu_id].online = 1;
-}
+static inline void cpu_set_online(uint32_t cpu_id) { g_cpu_local[cpu_id].online = 1; }

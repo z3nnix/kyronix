@@ -2,8 +2,8 @@
 
 #include <stdint.h>
 
-#include "syscall.h"
 #include "proc/signal.h"
+#include "syscall.h"
 
 int64_t sys_kill(int64_t pid, int sig);
 int64_t sys_tgkill(int tgid, int tid, int sig);

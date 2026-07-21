@@ -74,7 +74,10 @@ int64_t sys_epoll_create1(int flags) {
     }
     int epfd =
         fd_open_host("/dev/null", O_RDONLY, 0); /* internal handle: not subject to jail root */
-    if (epfd < 0) { spin_unlock(&g_epolls_lock); return -(int64_t) EMFILE; }
+    if (epfd < 0) {
+        spin_unlock(&g_epolls_lock);
+        return -(int64_t) EMFILE;
+    }
     epoll_t *ep = NULL;
     for (int i = 0; i < EPOLL_SLOTS; i++)
         if (g_epolls[i].epfd == -1) {
@@ -101,11 +104,17 @@ int64_t sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *ev) {
     spin_lock(&g_epolls_lock);
     switch (op) {
     case EPOLL_CTL_ADD:
-        if (ep->nw >= EPOLL_MAXW) { spin_unlock(&g_epolls_lock); return -(int64_t) ENOMEM; }
+        if (ep->nw >= EPOLL_MAXW) {
+            spin_unlock(&g_epolls_lock);
+            return -(int64_t) ENOMEM;
+        }
         for (int i = 0; i < ep->nw; i++)
-            if (ep->w[i].fd == fd) { spin_unlock(&g_epolls_lock); return -(int64_t) EEXIST; }
+            if (ep->w[i].fd == fd) {
+                spin_unlock(&g_epolls_lock);
+                return -(int64_t) EEXIST;
+            }
         ep->w[ep->nw] =
-            (struct epoll_watch){ fd, ev ? ev->events : EPOLLIN | EPOLLOUT, ev ? ev->data : 0 };
+            (struct epoll_watch) { fd, ev ? ev->events : EPOLLIN | EPOLLOUT, ev ? ev->data : 0 };
         ep->nw++;
         spin_unlock(&g_epolls_lock);
         return 0;

@@ -1,9 +1,9 @@
 #include "syscall.h"
-#include "version.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
+#include "cred.h"
 #include "crypto/chacha20.h"
 #include "drivers/acpi.h"
 #include "epoll.h"
@@ -12,9 +12,14 @@
 #include "fs/inet_socket.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
+#include "fsops.h"
+#include "futex.h"
+#include "internal.h"
+#include "jailsys.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "mem.h"
 #include "mm/pmm.h"
 #include "mm/shm.h"
 #include "mm/vmm.h"
@@ -23,17 +28,12 @@
 #include "proc/proc.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
+#include "procctl.h"
+#include "ptrace.h"
+#include "sig.h"
 #include "socket.h"
 #include "time.h"
-#include "internal.h"
-#include "mem.h"
-#include "ptrace.h"
-#include "futex.h"
-#include "jailsys.h"
-#include "cred.h"
-#include "fsops.h"
-#include "sig.h"
-#include "procctl.h"
+#include "version.h"
 
 static bool copy_user_path(char *out, const char *in) {
     if (!in) return false;
@@ -708,8 +708,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         uint32_t cmd;
         if ((uint32_t) a1 == REBOOT_MAGIC1) {
             uint32_t m2 = (uint32_t) a2;
-            if (m2 != 0x28121969u && m2 != 0x05121996u && m2 != 0x16041998u &&
-                m2 != 0x20112000u) {
+            if (m2 != 0x28121969u && m2 != 0x05121996u && m2 != 0x16041998u && m2 != 0x20112000u) {
                 ret = -(int64_t) EINVAL;
                 break;
             }

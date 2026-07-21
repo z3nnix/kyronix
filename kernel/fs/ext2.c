@@ -991,7 +991,7 @@ static uint32_t create_disk_node(vfs_node_t *node, uint32_t parent_ino) {
 
 static int64_t ext2_reg_read(vfs_node_t *n, char *buf, uint64_t off, uint64_t len) {
     if (!n->data && n->size > 0) {
-        uint32_t ino_nr = (uint32_t)(uintptr_t)n->fs_private;
+        uint32_t ino_nr = (uint32_t) (uintptr_t) n->fs_private;
         ext2_inode_t ino;
         if (read_inode(ino_nr, &ino) < 0) return -(int64_t) 5;
         uint64_t size;
@@ -1028,10 +1028,10 @@ static int64_t ext2_reg_write(vfs_node_t *n, const char *buf, uint64_t off, uint
     return (int64_t) len;
 }
 
-static void ext2_reg_close(vfs_node_t *n) { (void)n; }
+static void ext2_reg_close(vfs_node_t *n) { (void) n; }
 
 static struct vfs_fs_ops ext2_reg_ops = {
-    .read  = ext2_reg_read,
+    .read = ext2_reg_read,
     .write = ext2_reg_write,
     .close = ext2_reg_close,
 };
@@ -1054,8 +1054,7 @@ static void sync_walk(vfs_node_t *node, uint32_t parent_ext2_ino) {
         }
     } else if (parent_ext2_ino) {
         ext2_ino = create_disk_node(node, parent_ext2_ino);
-        if (ext2_ino)
-            log_info("ext2: sync  created ino=%u  name=%s", ext2_ino, node->name);
+        if (ext2_ino) log_info("ext2: sync  created ino=%u  name=%s", ext2_ino, node->name);
     }
 
     if (node->type == VFS_TYPE_DIR && ext2_ino)
@@ -1103,7 +1102,7 @@ static void process_entry(uint32_t ino_nr, const char *path) {
             n->gid = ino.i_gid;
             n->size = inode_size_64(&ino);
             n->fs_ops = &ext2_reg_ops;
-            n->fs_private = (void *)(uintptr_t) ino_nr;
+            n->fs_private = (void *) (uintptr_t) ino_nr;
             track_node(ino_nr, n);
         }
     } else if (type == EXT2_S_IFLNK) {
@@ -1209,7 +1208,8 @@ bool ext2_check_root(struct block_device *dev) {
     ext2_bgd_t *bgdt = (ext2_bgd_t *) bgdt_buf;
     uint32_t group = (2u - 1u) / inodes_per_group;
     uint32_t idx = (2u - 1u) % inodes_per_group;
-    uint64_t byteoff = (uint64_t) bgdt[group].bg_inode_table * block_size + (uint64_t) idx * inode_size;
+    uint64_t byteoff =
+        (uint64_t) bgdt[group].bg_inode_table * block_size + (uint64_t) idx * inode_size;
     uint64_t lba = byteoff / 512u;
     uint32_t off = (uint32_t) (byteoff % 512u);
 
@@ -1382,25 +1382,23 @@ static int ext2_fs_create(vfs_node_t *n, const char *path, uint32_t mode) {
     const char *childname;
     if (resolve_parent(path, &parent_ino, &childname) < 0 || !*childname) return -1;
 
-    ext2_create(path, (uint16_t)(n->mode & 07777u), NULL, 0);
+    ext2_create(path, (uint16_t) (n->mode & 07777u), NULL, 0);
 
     uint32_t ino_nr = ext2_lookup(parent_ino, childname);
     if (!ino_nr) return -1;
 
-    n->fs_ops     = &ext2_reg_ops;
-    n->fs_private = (void *)(uintptr_t) ino_nr;
+    n->fs_ops = &ext2_reg_ops;
+    n->fs_private = (void *) (uintptr_t) ino_nr;
     track_node(ino_nr, n);
     return 0;
 }
 
 static struct filesystem ext2_fs = {
-    .name       = "ext2",
+    .name = "ext2",
     .check_root = ext2_check_root,
-    .mount      = ext2_mount,
-    .sync       = ext2_sync,
-    .create     = ext2_fs_create,
+    .mount = ext2_mount,
+    .sync = ext2_sync,
+    .create = ext2_fs_create,
 };
 
-void ext2_init(void) {
-    vfs_register_fs(&ext2_fs);
-}
+void ext2_init(void) { vfs_register_fs(&ext2_fs); }

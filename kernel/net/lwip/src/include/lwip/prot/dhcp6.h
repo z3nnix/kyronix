@@ -93,9 +93,10 @@ typedef enum {
 #define DHCP6_STATUS_UNSPECFAIL                                                                    \
     1 /* Failure, reason unspecified; this status code is sent by either a client or a server to   \
          indicate a failure not explicitly specified in this document. */
-#define DHCP6_STATUS_NOADDRSAVAIL 2 /* Server has no addresses available to assign to the IA(s).   \
-                                     */
-#define DHCP6_STATUS_NOBINDING 3    /* Client record (binding) unavailable. */
+#define DHCP6_STATUS_NOADDRSAVAIL                                                                  \
+    2                            /* Server has no addresses available to assign to the IA(s).      \
+                                  */
+#define DHCP6_STATUS_NOBINDING 3 /* Client record (binding) unavailable. */
 #define DHCP6_STATUS_NOTONLINK                                                                     \
     4 /* The prefix for the address is not appropriate for the link to which the client is         \
          attached. */

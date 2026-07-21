@@ -1,9 +1,9 @@
 #include "futex.h"
 
-#include "internal.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/spinlock.h"
+#include "internal.h"
 #include "proc/proc.h"
 
 #define FUTEX_WAIT 0
@@ -37,7 +37,7 @@ void cleartid_wake(uint32_t *addr) {
 }
 
 int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t *uaddr2,
-                         uint32_t val3) {
+                  uint32_t val3) {
     if (!uaddr || !uptr_ok(uaddr, sizeof(*uaddr))) return -(int64_t) EFAULT;
     int cmd = op & ~(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME);
     switch (cmd) {
@@ -52,7 +52,10 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
                 slot = i;
                 break;
             }
-        if (slot < 0) { spin_unlock(&g_futex_lock); return -(int64_t) ENOMEM; }
+        if (slot < 0) {
+            spin_unlock(&g_futex_lock);
+            return -(int64_t) ENOMEM;
+        }
         g_futex_tab[slot].uaddr = uaddr;
         g_futex_tab[slot].proc = p;
         spin_unlock(&g_futex_lock);

@@ -1,7 +1,7 @@
 #pragma once
+#include "arch/x86_64/spinlock.h"
 #include <stddef.h>
 #include <stdint.h>
-#include "arch/x86_64/spinlock.h"
 
 #define PIPE_BUFSZ 65536
 #define PIPE_ANC_SLOTS 8

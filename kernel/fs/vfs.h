@@ -86,7 +86,7 @@ struct vfs_node;
 struct vfs_fs_ops {
     int64_t (*read)(struct vfs_node *, char *, uint64_t off, uint64_t len);
     int64_t (*write)(struct vfs_node *, const char *, uint64_t off, uint64_t len);
-    void   (*close)(struct vfs_node *);
+    void (*close)(struct vfs_node *);
 };
 
 /* Filesystem driver registration */
@@ -124,8 +124,8 @@ typedef struct vfs_node {
 
     volatile int sock_backlog;
 
-    void *fs_private;             /* filesystem per-node data (e.g. ext2 inode) */
-    struct vfs_fs_ops *fs_ops;    /* NULL = ramfs / chr / symlink */
+    void *fs_private;          /* filesystem per-node data (e.g. ext2 inode) */
+    struct vfs_fs_ops *fs_ops; /* NULL = ramfs / chr / symlink */
     uint8_t dirty;
 } vfs_node_t;
 

@@ -1,0 +1,220 @@
+#include "trees.h"
+#include "llfree_platform.h"
+#include "tree.h"
+#include "utils.h"
+
+void trees_init(trees_t *self, size_t frames, uint8_t *buffer, trees_init_fn init_fn,
+                void *init_ctx, uint8_t default_class) {
+    self->len = div_ceil(frames, LLFREE_TREE_SIZE);
+    self->entries = (_Atomic(tree_t) *) buffer;
+    self->default_class = default_class;
+
+    if (init_fn != NULL) {
+        for (size_t i = 0; i < self->len; ++i) {
+            treeF_t free = init_fn(frame_from_tree(tree_id(i)), init_ctx);
+            self->entries[i] = tree_new(false, default_class, free);
+        }
+    }
+}
+
+uint8_t *trees_metadata(const trees_t *self) { return (uint8_t *) self->entries; }
+
+tree_t trees_load(const trees_t *self, tree_id_t idx) {
+    assert(idx.value < self->len);
+    return atom_load(&self->entries[idx.value]);
+}
+
+bool trees_steal(trees_t *self, tree_id_t idx, treeF_t frames, uint8_t *class,
+                 llfree_policy_fn policy) {
+    assert(idx.value < self->len);
+    tree_t old;
+    bool ok = atom_update(&self->entries[idx.value], old, tree_steal, frames, class, policy);
+    return ok;
+}
+
+void trees_put(trees_t *self, tree_id_t idx, treeF_t frames, llfree_policy_fn policy) {
+    assert(idx.value < self->len);
+    (void) policy; // reserved for future use (see Rust tree_put policy check)
+    tree_t old;
+    atom_update(&self->entries[idx.value], old, tree_put, frames, policy, self->default_class);
+}
+
+bool trees_reserve_or_steal(trees_t *self, tree_id_t idx, treeF_t frames, llfree_policy_fn policy,
+                            uint8_t class, bool *out_reserved, treeF_t *out_free,
+                            uint8_t *out_class) {
+    assert(idx.value < self->len);
+    tree_t old;
+    bool ok = atom_update(&self->entries[idx.value], old, tree_reserve_or_steal, frames, policy,
+                          class, out_reserved, out_class);
+    if (ok && out_free != NULL) *out_free = old.free;
+    return ok;
+}
+
+void trees_unreserve(trees_t *self, tree_id_t idx, treeF_t free, uint8_t class,
+                     llfree_policy_fn policy) {
+    assert(idx.value < self->len);
+    tree_t old;
+    atom_update(&self->entries[idx.value], old, tree_unreserve_add, free, class, policy,
+                self->default_class);
+}
+
+bool trees_sync_steal(trees_t *self, tree_id_t idx, treeF_t min, treeF_t *out_stolen) {
+    assert(idx.value < self->len);
+    tree_t old;
+    bool ok = atom_update(&self->entries[idx.value], old, tree_sync_steal, min);
+    if (ok && out_stolen != NULL) *out_stolen = old.free;
+    return ok;
+}
+
+llfree_result_t trees_search(const trees_t *self, tree_id_t start, size_t offset, size_t len,
+                             trees_access_fn cb, void *ctx) {
+    int64_t base = (int64_t) (start.value + self->len);
+    for (int64_t i = (int64_t) offset; i < (int64_t) len; ++i) {
+        int64_t off = i % 2 == 0 ? i / 2 : -((i + 1) / 2);
+        size_t idx = (size_t) (base + off) % self->len;
+        llfree_result_t res = cb(tree_id(idx), ctx);
+        if (res.error != LLFREE_ERR_MEMORY) {
+            if (i - (int64_t) offset > 4)
+                llfree_debug("large search o=%zu i=%zd len=%zu -> tree %zu", offset, (ssize_t) i,
+                             len,
+                             llfree_is_ok(res) ? tree_from_frame(res.frame).value : (size_t) -1);
+            return res;
+        }
+    }
+    if (len > 4) llfree_debug("search failed o=%zu len=%zu start=%zu", offset, len, start);
+    return llfree_err(LLFREE_ERR_MEMORY);
+}
+
+llfree_result_t trees_search_best(const trees_t *self, tree_id_t start, size_t offset, size_t len,
+                                  trees_rate_fn rate, void *rate_args, trees_access_fn cb,
+                                  void *ctx) {
+    struct best {
+        uint8_t prio; // present if > 0
+        size_t idx;
+    };
+    struct best best[TREES_SEARCH_BEST] = { 0 };
+
+    int64_t base = (int64_t) (start.value + self->len);
+    for (int64_t i = (int64_t) offset; i < (int64_t) len; ++i) {
+        int64_t off = i % 2 == 0 ? i / 2 : -((i + 1) / 2);
+        size_t idx = (size_t) (base + off) % self->len;
+
+        tree_t tree = atom_load(&self->entries[idx]);
+        if (tree.reserved) continue;
+
+        // Rate the tree
+        llfree_policy_t p = rate(tree.class, tree.free, rate_args);
+        if (p.type == LLFREE_POLICY_INVALID) continue;
+
+        // Perfect match: try immediately
+        if (p.type == LLFREE_POLICY_MATCH && p.priority == UINT8_MAX) {
+            llfree_result_t res = cb(tree_id(idx), ctx);
+            if (res.error != LLFREE_ERR_MEMORY) return res;
+            continue;
+        }
+
+        // Priority+1 so 0 means "no candidate"
+        uint8_t prio = p.priority + 1;
+
+        size_t pos = 0;
+        for (; pos < TREES_SEARCH_BEST; ++pos) {
+            if (prio > best[pos].prio) break;
+        }
+        if (pos < TREES_SEARCH_BEST) {
+            for (size_t j = TREES_SEARCH_BEST - 1; j > pos; --j) best[j] = best[j - 1];
+            best[pos].prio = prio;
+            best[pos].idx = idx;
+        }
+    }
+
+    for (size_t i = 0; i < TREES_SEARCH_BEST; ++i) {
+        if (best[i].prio == 0) break;
+        llfree_result_t res = cb(tree_id(best[i].idx), ctx);
+        if (res.error != LLFREE_ERR_MEMORY) return res;
+    }
+
+    return llfree_err(LLFREE_ERR_MEMORY);
+}
+
+ll_tree_stats_t trees_stats(const trees_t *self) {
+    ll_tree_stats_t stats = { 0 };
+    for (size_t i = 0; i < self->len; i++) {
+        tree_t t = atom_load(&self->entries[i]);
+        stats.free_frames += t.free;
+        stats.free_trees += t.free == LLFREE_TREE_SIZE;
+
+        ll_class_stats_t *class = &stats.classes[t.class];
+        class->free_frames += t.free;
+        class->alloc_frames += LLFREE_TREE_SIZE - t.free;
+    }
+    return stats;
+}
+
+void trees_stats_at(const trees_t *self, tree_id_t idx, uint8_t *class, treeF_t *free,
+                    bool *reserved) {
+    assert(idx.value < self->len);
+    tree_t t = atom_load(&self->entries[idx.value]);
+    if (class != NULL) *class = t.class;
+    if (free != NULL) *free = t.free;
+    if (reserved != NULL) *reserved = t.reserved;
+}
+
+typedef struct change_at_args {
+    trees_t *trees;
+    llfree_tree_match_t matcher;
+    llfree_tree_change_t change;
+    trees_fetch_free_fn fetch_free;
+    void *fetch_ctx;
+} change_at_args_t;
+
+static llfree_result_t trees_change_at(tree_id_t idx, void *ctx) {
+    change_at_args_t *args = (change_at_args_t *) ctx;
+    tree_t old = atom_load(&args->trees->entries[idx.value]);
+
+    while (true) {
+        treeF_t online_free = 0;
+        if (args->change.operation == LLFREE_TREE_OP_ONLINE) {
+            online_free = args->fetch_free(idx, args->fetch_ctx);
+        }
+
+        tree_t desired = old;
+        if (!tree_change(&desired, args->matcher.class, (treeF_t) args->matcher.free,
+                         args->change.class, args->change.operation, online_free)) {
+            return llfree_err(LLFREE_ERR_MEMORY);
+        }
+
+        if (atom_cmp_exchange_weak(&args->trees->entries[idx.value], &old, desired)) {
+            return llfree_ok(frame_id(0), 0);
+        }
+    }
+}
+
+llfree_result_t trees_change(trees_t *self, llfree_tree_match_t matcher,
+                             llfree_tree_change_t change, trees_fetch_free_fn fetch_free,
+                             void *fetch_ctx) {
+    if (matcher.free > LLFREE_TREE_SIZE) return llfree_err(LLFREE_ERR_MEMORY);
+
+    change_at_args_t args = {
+        .trees = self,
+        .matcher = matcher,
+        .change = change,
+        .fetch_free = fetch_free,
+        .fetch_ctx = fetch_ctx,
+    };
+
+    if (matcher.id.present) {
+        if (matcher.id.value.value >= self->len) return llfree_err(LLFREE_ERR_MEMORY);
+        return trees_change_at(matcher.id.value, &args);
+    }
+
+    return trees_search(self, tree_id(0), 0, self->len, trees_change_at, &args);
+}
+
+void trees_print(const trees_t *self, size_t indent) {
+    llfree_info_cont("%strees: %zu (%u) {\n", INDENT(indent), self->len, LLFREE_TREE_SIZE);
+    for (size_t i = 0; i < self->len; i++) {
+        tree_t tree = atom_load(&self->entries[i]);
+        tree_print(&tree, tree_id(i), indent + 1);
+    }
+    llfree_info_cont("%s}\n", INDENT(indent));
+}

@@ -1,7 +1,5 @@
 #include "procctl.h"
 
-#include "internal.h"
-#include "futex.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/syscall_setup.h"
@@ -9,6 +7,8 @@
 #include "exec/process.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
+#include "futex.h"
+#include "internal.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -92,7 +92,6 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
     child->state = PROC_READY;
     proc_set_ready(child);
 
-
     return (int64_t) child->pid;
 
 fail_fork:
@@ -116,7 +115,7 @@ int64_t sys_fork(syscall_frame_t *f) { return sys_fork_at(f, 0); }
 #define CLONE_CHILD_SETTID 0x01000000
 
 int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t *ctid,
-                         uint64_t newtls, syscall_frame_t *f) {
+                  uint64_t newtls, syscall_frame_t *f) {
     proc_t *parent = cur();
     if (!parent) return -(int64_t) ENOMEM;
 

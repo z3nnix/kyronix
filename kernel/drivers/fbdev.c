@@ -61,14 +61,14 @@ static int64_t fb0_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         v->yres = v->yres_virtual = (uint32_t) g_fb.height;
         v->bits_per_pixel = g_fb.bpp;
         if (g_fb.bpp == 32) {
-            v->red = (fb_bitfield_t){ 16, 8, 0 };
-            v->green = (fb_bitfield_t){ 8, 8, 0 };
-            v->blue = (fb_bitfield_t){ 0, 8, 0 };
-            v->transp = (fb_bitfield_t){ 24, 8, 0 };
+            v->red = (fb_bitfield_t) { 16, 8, 0 };
+            v->green = (fb_bitfield_t) { 8, 8, 0 };
+            v->blue = (fb_bitfield_t) { 0, 8, 0 };
+            v->transp = (fb_bitfield_t) { 24, 8, 0 };
         } else if (g_fb.bpp == 24) {
-            v->red = (fb_bitfield_t){ 16, 8, 0 };
-            v->green = (fb_bitfield_t){ 8, 8, 0 };
-            v->blue = (fb_bitfield_t){ 0, 8, 0 };
+            v->red = (fb_bitfield_t) { 16, 8, 0 };
+            v->green = (fb_bitfield_t) { 8, 8, 0 };
+            v->blue = (fb_bitfield_t) { 0, 8, 0 };
         }
         v->activate = 0;
         v->height = v->width = 0xFFFFFFFF; /* unknown physical size */

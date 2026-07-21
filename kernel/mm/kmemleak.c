@@ -1,11 +1,11 @@
 #include "kmemleak.h"
 #include "heap.h"
-#include "pmm.h"
-#include "vmm.h"
-#include "proc/proc.h"
 #include "lib/kallsyms.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "pmm.h"
+#include "proc/proc.h"
+#include "vmm.h"
 
 #define KMEMLEAK_MAX 8192
 #define KMEMLEAK_PAGE_MAX 2048
@@ -53,8 +53,7 @@ static void capture_backtrace(uint64_t *bt, int *depth) {
     int i = 0;
     while (i < KMEMLEAK_BT_DEPTH) {
         if (!fp || !is_kernel_addr(fp)) break;
-        if (!page_is_mapped((uint64_t) fp) ||
-            !page_is_mapped((uint64_t) fp + sizeof(struct frame)))
+        if (!page_is_mapped((uint64_t) fp) || !page_is_mapped((uint64_t) fp + sizeof(struct frame)))
             break;
         bt[i++] = fp->ret;
         fp = fp->rbp;
@@ -132,14 +131,14 @@ void kmemleak_untrack_page(void *phys) {
 }
 
 static int page_is_mapped(uint64_t virt) {
+    if (!g_kernel_space.pml4_phys) return 1;
     return vmm_virt_to_phys(&g_kernel_space, virt) != 0;
 }
 
 static void try_mark_page(uint64_t phys) {
     if (phys >= g_max_phys) return;
     for (int i = 0; i < KMEMLEAK_PAGE_MAX; i++) {
-        if (g_pages[i].used && !g_pages[i].reachable &&
-            g_pages[i].phys == phys) {
+        if (g_pages[i].used && !g_pages[i].reachable && g_pages[i].phys == phys) {
             g_pages[i].reachable = 1;
         }
     }
@@ -223,15 +222,12 @@ static void walk_page_table(vmm_space_t *sp, int start, int end, int mark_leaf) 
 static int do_scan(void) {
     g_max_phys = pmm_total_pages() << PAGE_SHIFT;
 
-    for (int i = 0; i < KMEMLEAK_MAX; i++)
-        g_entries[i].reachable = 0;
-    for (int i = 0; i < KMEMLEAK_PAGE_MAX; i++)
-        g_pages[i].reachable = g_pages[i].perm;
+    for (int i = 0; i < KMEMLEAK_MAX; i++) g_entries[i].reachable = 0;
+    for (int i = 0; i < KMEMLEAK_PAGE_MAX; i++) g_pages[i].reachable = g_pages[i].perm;
 
     scan_region(__data_start, __data_end);
     scan_region(__bss_start, __bss_end);
-    scan_region((const uint8_t *) g_proctable,
-                (const uint8_t *) (g_proctable + PROC_MAX));
+    scan_region((const uint8_t *) g_proctable, (const uint8_t *) (g_proctable + PROC_MAX));
 
     for (int i = 0; i < PROC_MAX; i++) {
         proc_t *p = &g_proctable[i];
@@ -263,8 +259,7 @@ static int do_scan(void) {
 
     int leaked = 0;
     for (int i = 0; i < KMEMLEAK_MAX; i++) {
-        if (g_entries[i].used && !g_entries[i].reachable)
-            leaked++;
+        if (g_entries[i].used && !g_entries[i].reachable) leaked++;
     }
     return leaked;
 }
@@ -276,12 +271,10 @@ int kmemleak_report(char *buf, uint64_t bufsz) {
     int n;
 
     for (int i = 0; i < KMEMLEAK_MAX; i++) {
-        if (!g_entries[i].used || g_entries[i].reachable)
-            continue;
+        if (!g_entries[i].used || g_entries[i].reachable) continue;
         nleak++;
-        n = snprintf(buf + pos, bufsz - pos,
-                     "  %3d. %p  size=%lu",
-                     nleak, g_entries[i].ptr, g_entries[i].size);
+        n = snprintf(buf + pos, bufsz - pos, "  %3d. %p  size=%lu", nleak, g_entries[i].ptr,
+                     g_entries[i].size);
         if (n < 0 || (uint64_t) n >= bufsz - pos) break;
         pos += (uint64_t) n;
 
@@ -300,12 +293,9 @@ int kmemleak_report(char *buf, uint64_t bufsz) {
 
     int page_leaks = 0;
     for (int i = 0; i < KMEMLEAK_PAGE_MAX; i++) {
-        if (!g_pages[i].used || g_pages[i].reachable)
-            continue;
+        if (!g_pages[i].used || g_pages[i].reachable) continue;
         page_leaks++;
-        n = snprintf(buf + pos, bufsz - pos,
-                     "  page %3d. phys=0x%lx",
-                     page_leaks, g_pages[i].phys);
+        n = snprintf(buf + pos, bufsz - pos, "  page %3d. phys=0x%lx", page_leaks, g_pages[i].phys);
         if (n < 0 || (uint64_t) n >= bufsz - pos) break;
         pos += (uint64_t) n;
 
@@ -331,22 +321,19 @@ int kmemleak_report(char *buf, uint64_t bufsz) {
 
     int total = nleak + page_leaks;
     n = snprintf(buf + pos, bufsz - pos,
-                 "KMEMLEAK: %d leak(s) (heap=%d pages=%d tracked=%d ptracked=%d)\n",
-                 total, nleak, page_leaks, tracked, ptracked);
-    if (n > 0 && (uint64_t) n < bufsz - pos)
-        pos += (uint64_t) n;
+                 "KMEMLEAK: %d leak(s) (heap=%d pages=%d tracked=%d ptracked=%d)\n", total, nleak,
+                 page_leaks, tracked, ptracked);
+    if (n > 0 && (uint64_t) n < bufsz - pos) pos += (uint64_t) n;
 
     return total;
 }
 
 int kmemleak_checkpoint(void) {
     int leaked = do_scan();
-    for (int i = 0; i < KMEMLEAK_MAX; i++)
-        g_entries[i].used = 0;
+    for (int i = 0; i < KMEMLEAK_MAX; i++) g_entries[i].used = 0;
     return leaked;
 }
 
 void kmemleak_clear(void) {
-    for (int i = 0; i < KMEMLEAK_MAX; i++)
-        g_entries[i].used = 0;
+    for (int i = 0; i < KMEMLEAK_MAX; i++) g_entries[i].used = 0;
 }

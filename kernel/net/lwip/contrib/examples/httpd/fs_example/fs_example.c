@@ -184,7 +184,8 @@ u8_t fs_canread_custom(struct fs_file *file) {
         /* if we come here, something is wrong with the file */
         LWIP_ASSERT("file error", 0);
     }
-    if (data->delay_read == 1) { /* tell read function to delay further */ }
+    if (data->delay_read == 1) { /* tell read function to delay further */
+    }
 #endif
     LWIP_UNUSED_ARG(file);
     return 1;

@@ -1,7 +1,7 @@
 #pragma once
 #include "arch/x86_64/atomic.h"
-#include "arch/x86_64/spinlock.h"
 #include "arch/x86_64/percpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "boot/limine.h"
 #include <stdint.h>
 

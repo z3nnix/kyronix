@@ -22,9 +22,7 @@ char g_cwd[512] = "/";
 
 static vfs_file_t *g_default_fds[VFS_FD_MAX];
 
-static inline vfs_file_t **vfs_cur_fds(void) {
-    return g_cur_fds ? g_cur_fds : g_default_fds;
-}
+static inline vfs_file_t **vfs_cur_fds(void) { return g_cur_fds ? g_cur_fds : g_default_fds; }
 
 #define FS_MAX 8
 static struct filesystem *g_filesystems[FS_MAX];
@@ -730,8 +728,7 @@ int64_t fd_pread(int fd, void *buf, uint64_t len, uint64_t off) {
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT; /* kernel writes into buf */
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    if (n->fs_ops && n->fs_ops->read)
-        return n->fs_ops->read(n, (char *) buf, off, len);
+    if (n->fs_ops && n->fs_ops->read) return n->fs_ops->read(n, (char *) buf, off, len);
     if (off >= n->size) return 0;
     uint64_t avail = n->size - off;
     uint64_t r = (len < avail) ? len : avail;
@@ -747,8 +744,7 @@ int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off) {
     if (!uptr_ok(buf, len)) return -(int64_t) EFAULT;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    if (n->fs_ops && n->fs_ops->write)
-        return n->fs_ops->write(n, (const char *) buf, off, len);
+    if (n->fs_ops && n->fs_ops->write) return n->fs_ops->write(n, (const char *) buf, off, len);
     uint64_t end = off + len;
     if (end > n->capacity) {
         uint64_t newcap = (end + 4095) & ~4095ULL;
@@ -774,8 +770,7 @@ int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off) {
     if (len == 0) return 0;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    if (n->fs_ops && n->fs_ops->write)
-        return n->fs_ops->write(n, (const char *) buf, off, len);
+    if (n->fs_ops && n->fs_ops->write) return n->fs_ops->write(n, (const char *) buf, off, len);
     uint64_t end = off + len;
     if (end > n->capacity) {
         uint64_t newcap = (end + 4095) & ~4095ULL;
@@ -918,7 +913,9 @@ static void file_addref(vfs_file_t *f) {
 
 void vfs_file_addref(vfs_file_t *f) { file_addref(f); }
 
-void vfs_set_fdtable(vfs_file_t **fds) { if (fds) g_cur_fds = fds; }
+void vfs_set_fdtable(vfs_file_t **fds) {
+    if (fds) g_cur_fds = fds;
+}
 vfs_file_t **vfs_get_fdtable(void) { return vfs_cur_fds(); }
 
 static void wire_stdio(vfs_file_t **fds) {
@@ -987,14 +984,11 @@ int vfs_register_fs(struct filesystem *fs) {
 
 struct filesystem *vfs_find_fs(const char *name) {
     for (int i = 0; i < g_filesystem_cnt; i++)
-        if (strcmp(g_filesystems[i]->name, name) == 0)
-            return g_filesystems[i];
+        if (strcmp(g_filesystems[i]->name, name) == 0) return g_filesystems[i];
     return NULL;
 }
 
-int vfs_fs_count(void) {
-    return g_filesystem_cnt;
-}
+int vfs_fs_count(void) { return g_filesystem_cnt; }
 
 struct filesystem *vfs_get_fs(int i) {
     return (i >= 0 && i < g_filesystem_cnt) ? g_filesystems[i] : NULL;
@@ -1002,8 +996,7 @@ struct filesystem *vfs_get_fs(int i) {
 
 void vfs_sync_all(void) {
     for (int i = 0; i < g_filesystem_cnt; i++)
-        if (g_filesystems[i]->sync)
-            g_filesystems[i]->sync();
+        if (g_filesystems[i]->sync) g_filesystems[i]->sync();
 }
 
 void vfs_init(void) {
@@ -1104,9 +1097,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot) {
         n = vfs_create_file(lpath, mode, NULL, 0);
         if (!n) return -(int) ENOMEM;
         for (int i = 0; i < g_filesystem_cnt; i++) {
-            if (g_filesystems[i]->create &&
-                g_filesystems[i]->create(n, lpath, mode) == 0)
-                break;
+            if (g_filesystems[i]->create && g_filesystems[i]->create(n, lpath, mode) == 0) break;
         }
         node_ref(n); /* ref for the fd; create_file returns unrefed node */
     } else {
@@ -1241,8 +1232,7 @@ int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (len == 0) return 0;
-    if (!uptr_ok_w(buf, len))
-        return -(int64_t) EFAULT;
+    if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT;
 
     if (f->wpipe) {
         if ((f->flags & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)

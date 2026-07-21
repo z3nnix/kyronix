@@ -1,9 +1,9 @@
 #include "sig.h"
 
-#include "internal.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
+#include "internal.h"
 #include "lib/string.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
@@ -66,7 +66,7 @@ int64_t sys_kill(int64_t pid, int sig) {
 }
 
 int64_t sys_rt_sigaction(int sig, const k_sigaction_t *act, k_sigaction_t *oldact,
-                                uint64_t sigsetsize) {
+                         uint64_t sigsetsize) {
     (void) sigsetsize;
     if (sig < 1 || sig >= NSIG) return -(int64_t) EINVAL;
     if (sig == SIGKILL || sig == SIGSTOP) return -(int64_t) EINVAL;
@@ -80,8 +80,7 @@ int64_t sys_rt_sigaction(int sig, const k_sigaction_t *act, k_sigaction_t *oldac
     return 0;
 }
 
-int64_t sys_rt_sigprocmask(int how, const uint64_t *set, uint64_t *oldset,
-                                  uint64_t sigsetsize) {
+int64_t sys_rt_sigprocmask(int how, const uint64_t *set, uint64_t *oldset, uint64_t sigsetsize) {
     (void) sigsetsize;
     proc_t *p = cur();
     if (!p) return -(int64_t) EFAULT;
@@ -250,7 +249,7 @@ int64_t sys_tgkill(int tgid, int tid, int sig) {
 }
 
 int64_t sys_rt_sigtimedwait(const uint64_t *set, void *info, const void *timeout,
-                                   uint64_t sigsetsize) {
+                            uint64_t sigsetsize) {
     (void) sigsetsize;
     (void) info;
     proc_t *p = cur();

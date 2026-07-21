@@ -13,7 +13,7 @@
 
 struct acpi_rsdp {
     char signature[8];
-    uint8_t checksum;  /* covers the first 20 bytes */
+    uint8_t checksum; /* covers the first 20 bytes */
     char oem_id[6];
     uint8_t revision;
     uint32_t rsdt_addr;
@@ -109,7 +109,6 @@ struct acpi_fadt {
 #define SCI_EN (1u << 0)
 #define SLP_TYP_SHIFT 10
 
-
 static bool g_acpi_ok = false;
 
 static uint32_t g_pm1a_cnt = 0; /* I/O port of PM1a control block */
@@ -126,7 +125,6 @@ static bool g_s5_found = false;
 static uint8_t g_slp_typ_a = 0;
 static uint8_t g_slp_typ_b = 0;
 
-
 static uint8_t acpi_checksum(const void *ptr, size_t len) {
     const uint8_t *p = ptr;
     uint8_t sum = 0;
@@ -139,16 +137,14 @@ static void *acpi_map_range(uint64_t phys, uint64_t len) {
     uint64_t end = (phys + len + 0xFFF) & ~0xFFFULL;
     for (uint64_t pa = start; pa < end; pa += 0x1000) {
         uint64_t va = (uint64_t) (uintptr_t) phys_to_virt(pa);
-        if (!vmm_virt_to_phys(&g_kernel_space, va))
-            vmm_map(&g_kernel_space, va, pa, VMM_KDATA);
+        if (!vmm_virt_to_phys(&g_kernel_space, va)) vmm_map(&g_kernel_space, va, pa, VMM_KDATA);
     }
     return phys_to_virt(phys);
 }
 
 static const struct acpi_sdt_header *acpi_map_table(uint64_t phys) {
     const struct acpi_sdt_header *h = acpi_map_range(phys, sizeof(struct acpi_sdt_header));
-    if (h->length > sizeof(struct acpi_sdt_header))
-        acpi_map_range(phys, h->length);
+    if (h->length > sizeof(struct acpi_sdt_header)) acpi_map_range(phys, h->length);
     return h;
 }
 
@@ -215,13 +211,10 @@ static void acpi_parse_s5(const struct acpi_sdt_header *dsdt) {
 static void acpi_parse_fadt(const struct acpi_fadt *fadt) {
     g_pm1a_cnt = fadt->pm1a_cnt_blk;
     g_pm1b_cnt = fadt->pm1b_cnt_blk;
-    if (fadt->hdr.length >= offsetof(struct acpi_fadt, x_pm1b_cnt_blk) +
-                                sizeof(struct acpi_gas)) {
-        if (fadt->x_pm1a_cnt_blk.address != 0 &&
-            fadt->x_pm1a_cnt_blk.address_space == ACPI_AS_IO)
+    if (fadt->hdr.length >= offsetof(struct acpi_fadt, x_pm1b_cnt_blk) + sizeof(struct acpi_gas)) {
+        if (fadt->x_pm1a_cnt_blk.address != 0 && fadt->x_pm1a_cnt_blk.address_space == ACPI_AS_IO)
             g_pm1a_cnt = (uint32_t) fadt->x_pm1a_cnt_blk.address;
-        if (fadt->x_pm1b_cnt_blk.address != 0 &&
-            fadt->x_pm1b_cnt_blk.address_space == ACPI_AS_IO)
+        if (fadt->x_pm1b_cnt_blk.address != 0 && fadt->x_pm1b_cnt_blk.address_space == ACPI_AS_IO)
             g_pm1b_cnt = (uint32_t) fadt->x_pm1b_cnt_blk.address;
     }
 
@@ -230,8 +223,7 @@ static void acpi_parse_fadt(const struct acpi_fadt *fadt) {
     g_sci_int = fadt->sci_int;
 
     // reset register
-    if (fadt->hdr.length >=
-            offsetof(struct acpi_fadt, reset_value) + sizeof(uint8_t) &&
+    if (fadt->hdr.length >= offsetof(struct acpi_fadt, reset_value) + sizeof(uint8_t) &&
         (fadt->flags & FADT_RESET_REG_SUP) && fadt->reset_reg.address != 0) {
         g_reset_sup = true;
         g_reset_reg = fadt->reset_reg;
@@ -294,8 +286,8 @@ static void acpi_iterate(uint64_t sdt_phys, bool use_xsdt) {
             madt_found = 1;
     }
 
-    log_info("ACPI: %s with %lu tables, MADT %s", use_xsdt ? "XSDT" : "RSDT",
-             (unsigned long) count, madt_found ? "present" : "absent");
+    log_info("ACPI: %s with %lu tables, MADT %s", use_xsdt ? "XSDT" : "RSDT", (unsigned long) count,
+             madt_found ? "present" : "absent");
 
     if (!fadt) {
         log_warn("ACPI: no FADT found");
@@ -306,9 +298,9 @@ static void acpi_iterate(uint64_t sdt_phys, bool use_xsdt) {
     acpi_enable_mode();
     g_acpi_ok = true;
 
-    log_info("ACPI: PM1a_CNT=0x%x PM1b_CNT=0x%x SCI=%u reset=%s S5=%s(a=%u b=%u)",
-             g_pm1a_cnt, g_pm1b_cnt, g_sci_int, g_reset_sup ? "yes" : "no",
-             g_s5_found ? "yes" : "def", g_slp_typ_a, g_slp_typ_b);
+    log_info("ACPI: PM1a_CNT=0x%x PM1b_CNT=0x%x SCI=%u reset=%s S5=%s(a=%u b=%u)", g_pm1a_cnt,
+             g_pm1b_cnt, g_sci_int, g_reset_sup ? "yes" : "no", g_s5_found ? "yes" : "def",
+             g_slp_typ_a, g_slp_typ_b);
 }
 
 void acpi_init(uint64_t rsdp_phys) {
@@ -343,11 +335,9 @@ bool acpi_available(void) { return g_acpi_ok; }
 
 __attribute__((noreturn)) void acpi_poweroff(void) {
     if (g_pm1a_cnt) {
-        outw((uint16_t) g_pm1a_cnt,
-             (uint16_t) ((g_slp_typ_a << SLP_TYP_SHIFT) | SLP_EN));
+        outw((uint16_t) g_pm1a_cnt, (uint16_t) ((g_slp_typ_a << SLP_TYP_SHIFT) | SLP_EN));
         if (g_pm1b_cnt)
-            outw((uint16_t) g_pm1b_cnt,
-                 (uint16_t) ((g_slp_typ_b << SLP_TYP_SHIFT) | SLP_EN));
+            outw((uint16_t) g_pm1b_cnt, (uint16_t) ((g_slp_typ_b << SLP_TYP_SHIFT) | SLP_EN));
         for (volatile int i = 0; i < 1000000; i++) io_wait();
     }
 
@@ -407,7 +397,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
     struct {
         uint16_t limit;
         uint64_t base;
-    } __attribute__((packed)) null_idtr = {0, 0};
+    } __attribute__((packed)) null_idtr = { 0, 0 };
     __asm__ volatile("lidt %0" ::"m"(null_idtr) : "memory");
     __asm__ volatile("int3");
     cli();

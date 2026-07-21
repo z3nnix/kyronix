@@ -1,7 +1,7 @@
 #pragma once
 
-#include "syscall.h"
 #include "proc/proc.h"
+#include "syscall.h"
 
 /* errno values shared across the syscall implementation modules */
 #define EPERM 1

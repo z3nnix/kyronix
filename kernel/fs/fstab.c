@@ -22,8 +22,7 @@ static int parse_fstab(const char *path, struct fstab_entry *entries, int max) {
         if (n) vfs_node_unref_internal(n);
         return 0;
     }
-    if (!n->data && n->fs_ops && n->fs_ops->read)
-        n->fs_ops->read(n, NULL, 0, n->size);
+    if (!n->data && n->fs_ops && n->fs_ops->read) n->fs_ops->read(n, NULL, 0, n->size);
     if (!n->data) {
         vfs_node_unref_internal(n);
         return 0;
@@ -63,8 +62,7 @@ static int parse_fstab(const char *path, struct fstab_entry *entries, int max) {
         memset(&entries[count], 0, sizeof(struct fstab_entry));
         strncpy(entries[count].device, fields[0], sizeof(entries[count].device) - 1);
         strncpy(entries[count].mount_point, fields[1], sizeof(entries[count].mount_point) - 1);
-        if (nf >= 3)
-            strncpy(entries[count].fstype, fields[2], sizeof(entries[count].fstype) - 1);
+        if (nf >= 3) strncpy(entries[count].fstype, fields[2], sizeof(entries[count].fstype) - 1);
         count++;
     }
 

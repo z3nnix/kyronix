@@ -1,6 +1,6 @@
 #include "ahci.h"
-#include "block.h"
 #include "../arch/x86_64/cpu.h"
+#include "../arch/x86_64/spinlock.h"
 #include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"
@@ -8,7 +8,7 @@
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
-#include "../arch/x86_64/spinlock.h"
+#include "block.h"
 #include "pci.h"
 
 #define PCI_CLASS_STORAGE 0x01
@@ -240,7 +240,7 @@ static bool port_init(int idx) {
     memset(ap->dma_buf, 0, AHCI_DMA_PAGES * PAGE_SIZE);
 #ifdef CONFIG_KMEMLEAK
     for (uint64_t i = 0; i < AHCI_DMA_PAGES; i++)
-        kmemleak_page_perm((void *)(ap->dma_phys + i * PAGE_SIZE));
+        kmemleak_page_perm((void *) (ap->dma_phys + i * PAGE_SIZE));
 #endif
 
     ap->cmdlist[0].ctba = (uint32_t) (ap->cmdtbl_phys & 0xFFFFFFFFu);
@@ -275,7 +275,8 @@ static int ahci_block_read(struct block_device *dev, uint64_t lba, uint32_t coun
     return ahci_read(port, lba, count, buf);
 }
 
-static int ahci_block_write(struct block_device *dev, uint64_t lba, uint32_t count, const void *buf) {
+static int ahci_block_write(struct block_device *dev, uint64_t lba, uint32_t count,
+                            const void *buf) {
     int port = (int) (uintptr_t) dev->priv;
     return ahci_write(port, lba, count, buf);
 }
@@ -471,7 +472,10 @@ int ahci_read(int port, uint64_t lba, uint32_t count, void *buf) {
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
-        if (do_command(ap, lba, batch, false) < 0) { spin_unlock(&ap->lock); return -1; }
+        if (do_command(ap, lba, batch, false) < 0) {
+            spin_unlock(&ap->lock);
+            return -1;
+        }
         memcpy(dst, ap->dma_buf, batch * 512u);
         dst += batch * 512u;
         lba += batch;
@@ -532,7 +536,10 @@ int ahci_write(int port, uint64_t lba, uint32_t count, const void *buf) {
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
         memcpy(ap->dma_buf, src, batch * 512u);
-        if (do_command(ap, lba, batch, true) < 0) { spin_unlock(&ap->lock); return -1; }
+        if (do_command(ap, lba, batch, true) < 0) {
+            spin_unlock(&ap->lock);
+            return -1;
+        }
         src += batch * 512u;
         lba += batch;
         rem -= batch;

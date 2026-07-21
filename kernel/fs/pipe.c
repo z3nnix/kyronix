@@ -28,8 +28,7 @@ void pipe_free(pipe_t *p) {
         if (t->state != PROC_WAITING || t->blocked_pipe != p) continue;
         t->blocked_pipe = NULL;
         t->wakeup_tick = 0;
-        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(t);
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY)) proc_set_ready(t);
     }
     p->magic = 0;
     spin_unlock(&p->lock);
@@ -64,8 +63,14 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
         spin_lock(&p->lock);
         while (done < len) {
             if (p->count == 0) {
-                if (p->write_refs == 0) { spin_unlock(&p->lock); return (int64_t) done; }
-                if (done > 0) { spin_unlock(&p->lock); return (int64_t) done; }
+                if (p->write_refs == 0) {
+                    spin_unlock(&p->lock);
+                    return (int64_t) done;
+                }
+                if (done > 0) {
+                    spin_unlock(&p->lock);
+                    return (int64_t) done;
+                }
 
                 proc_t *_rp = g_current_proc;
                 if (_rp) {
@@ -90,7 +95,7 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
         }
         spin_unlock(&p->lock);
         break;
-restart_read:;
+    restart_read:;
     }
 
     pipe_wake(p, 0); /* space freed: wake all blocked writers */
@@ -106,8 +111,14 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
         spin_lock(&p->lock);
         while (done < len) {
             if (p->count <= skip + done) {
-                if (p->write_refs == 0) { spin_unlock(&p->lock); return (int64_t) done; }
-                if (done > 0) { spin_unlock(&p->lock); return (int64_t) done; }
+                if (p->write_refs == 0) {
+                    spin_unlock(&p->lock);
+                    return (int64_t) done;
+                }
+                if (done > 0) {
+                    spin_unlock(&p->lock);
+                    return (int64_t) done;
+                }
 
                 proc_t *_rp = g_current_proc;
                 if (_rp) {
@@ -132,7 +143,7 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
         }
         spin_unlock(&p->lock);
         break;
-restart_peek:;
+    restart_peek:;
     }
 
     return (int64_t) done;
@@ -178,7 +189,7 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
         }
         spin_unlock(&p->lock);
         break;
-restart_write:;
+    restart_write:;
     }
 
     pipe_wake(p, 1); /* data available: wake all blocked readers */
@@ -189,7 +200,10 @@ int pipe_anc_send(pipe_t *p, void **files, int nfds) {
     if (!pipe_valid(p) || !files || nfds <= 0 || nfds > PIPE_ANC_MAXFDS) return -1;
     spin_lock(&p->lock);
     uint32_t next = (p->anc_wr + 1) % PIPE_ANC_SLOTS;
-    if (next == p->anc_rd) { spin_unlock(&p->lock); return -1; }
+    if (next == p->anc_rd) {
+        spin_unlock(&p->lock);
+        return -1;
+    }
     pipe_anc_t *slot = &p->anc_q[p->anc_wr];
     slot->nfds = nfds;
     for (int i = 0; i < nfds; i++) slot->files[i] = files[i];
@@ -201,7 +215,10 @@ int pipe_anc_send(pipe_t *p, void **files, int nfds) {
 int pipe_anc_recv(pipe_t *p, void **out, int max) {
     if (!pipe_valid(p) || !out || max <= 0) return 0;
     spin_lock(&p->lock);
-    if (p->anc_rd == p->anc_wr) { spin_unlock(&p->lock); return 0; }
+    if (p->anc_rd == p->anc_wr) {
+        spin_unlock(&p->lock);
+        return 0;
+    }
     pipe_anc_t *slot = &p->anc_q[p->anc_rd];
     int n = slot->nfds < max ? slot->nfds : max;
     for (int i = 0; i < n; i++) out[i] = slot->files[i];
