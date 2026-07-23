@@ -344,25 +344,29 @@ bool ahci_init(void) {
     uint32_t pi = g_hba->pi;
     log_info("AHCI: CAP=0x%08x  PI=0x%08x", g_hba->cap, pi);
 
+    static struct block_device_ops ahci_ops = {
+        ahci_block_read,
+        ahci_block_write,
+        ahci_block_flush,
+    };
     int found = 0;
+    int disk_idx = 0;
     for (int i = 0; i < 32; i++) {
         if (!(pi & (1u << i))) continue;
         if (port_init(i)) {
-            static struct block_device_ops ahci_ops = {
-                ahci_block_read,
-                ahci_block_write,
-                ahci_block_flush,
-            };
             struct block_device *bd = (struct block_device *) kmalloc(sizeof(struct block_device));
             if (bd) {
                 memset(bd, 0, sizeof(*bd));
-                snprintf(bd->name, sizeof(bd->name), "ahci%d", i);
+                snprintf(bd->name, sizeof(bd->name), "sd%c", 'a' + disk_idx);
                 bd->sectors = g_ports[i].disk_sectors;
                 bd->sector_size = 512;
                 bd->ops = &ahci_ops;
                 bd->priv = (void *) (uintptr_t) i;
+                bd->offset_lba = 0;
+                bd->parent = NULL;
                 block_register(bd);
             }
+            disk_idx++;
             found++;
         }
     }

@@ -34,7 +34,7 @@ static int64_t dev_null_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t of
     return 0;
 }
 
-static int64_t dev_null_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t dev_null_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) n;
     (void) buf;
     return (int64_t) len;
@@ -55,7 +55,7 @@ static int64_t dev_urandom_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t
 }
 
 /* add entropy when someone weite to /dev/random */
-static int64_t dev_random_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t dev_random_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) n;
     chacha20_rng_mix(&g_chacha20_rng, (const uint8_t *) buf, (size_t) len);
     return (int64_t) len;
@@ -67,7 +67,7 @@ static int64_t dev_tty_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off
     return tty_read(buf, len);
 }
 
-static int64_t dev_tty_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t dev_tty_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) n;
     return tty_write(buf, len);
 }
@@ -100,7 +100,7 @@ static int64_t ptym_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     return p ? pipe_read(p->s2m, buf, len) : -(int64_t) EINVAL;
 }
 
-static int64_t ptym_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t ptym_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     pty_inst_t *p = pty_of(n);
     return p ? pipe_write(p->m2s, buf, len) : -(int64_t) EINVAL;
 }
@@ -157,7 +157,7 @@ static int64_t ptys_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     return p ? pipe_read(p->m2s, buf, len) : -(int64_t) EINVAL;
 }
 
-static int64_t ptys_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t ptys_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     pty_inst_t *p = pty_of(n);
     if (!p || !p->s2m) return -(int64_t) EINVAL;
     int64_t done = 0;

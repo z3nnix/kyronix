@@ -18,6 +18,8 @@ struct block_device {
     uint32_t sector_size;
     struct block_device_ops *ops;
     void *priv;
+    uint64_t offset_lba;
+    struct block_device *parent;
 };
 
 void block_init(void);

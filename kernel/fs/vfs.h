@@ -114,7 +114,7 @@ typedef struct vfs_node {
     struct vfs_node *parent;
     char *symlink;
     int64_t (*chr_read)(struct vfs_node *, char *, uint64_t, uint64_t);
-    int64_t (*chr_write)(struct vfs_node *, const char *, uint64_t);
+    int64_t (*chr_write)(struct vfs_node *, const char *, uint64_t, uint64_t);
     int64_t (*chr_ioctl)(struct vfs_node *, uint64_t req, uint64_t arg);
     bool (*chr_pollin)(struct vfs_node *);
     int (*chr_open)(struct vfs_node *, int flags);
@@ -235,7 +235,7 @@ vfs_node_t *vfs_create_file(const char *path, uint32_t mode, const void *data, u
 vfs_node_t *vfs_create_symlink(const char *path, const char *target);
 vfs_node_t *vfs_create_chr(const char *path,
                            int64_t (*rfn)(vfs_node_t *, char *, uint64_t, uint64_t),
-                           int64_t (*wfn)(vfs_node_t *, const char *, uint64_t));
+                           int64_t (*wfn)(vfs_node_t *, const char *, uint64_t, uint64_t));
 
 int vfs_mkdir(const char *path, uint32_t mode);
 int vfs_unlink(const char *path);

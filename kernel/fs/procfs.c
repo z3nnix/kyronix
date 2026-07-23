@@ -13,6 +13,7 @@
 #include "mm/vmm.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "syscall/mount.h"
 #include "syscall/syscall.h"
 
 #define EINVAL 22
@@ -297,11 +298,20 @@ static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
 
 static int64_t proc_mounts_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
-    static const char mounts[] = "ramfs / ramfs rw 0 0\n"
-                                 "proc /proc proc rw,nosuid,nodev,noexec 0 0\n"
-                                 "sysfs /sys sysfs rw,nosuid,nodev,noexec 0 0\n"
-                                 "devtmpfs /dev devtmpfs rw,nosuid 0 0\n";
-    return read_buf(buf, len, off, mounts, sizeof(mounts) - 1);
+    char tmp[2048];
+    int sz = snprintf(tmp, sizeof(tmp),
+                      "ramfs / ramfs rw 0 0\n"
+                      "proc /proc proc rw,nosuid,nodev,noexec 0 0\n"
+                      "sysfs /sys sysfs rw,nosuid,nodev,noexec 0 0\n"
+                      "devtmpfs /dev devtmpfs rw,nosuid 0 0\n");
+    mount_entry_t *mt = mount_table();
+    int mc = mount_count();
+    for (int i = 0; i < mc && sz < (int) sizeof(tmp) - 128; i++) {
+        if (!mt[i].used) continue;
+        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "%s %s %s rw 0 0\n",
+                       mt[i].source, mt[i].target, mt[i].fstype);
+    }
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_filesystems_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -649,7 +659,7 @@ static int64_t proc_loglevel_read(vfs_node_t *n, char *buf, uint64_t len, uint64
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
-static int64_t proc_loglevel_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t proc_loglevel_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) n;
     if (g_current_proc && g_current_proc->euid != 0) return -(int64_t) EPERM;
     char c = buf[0];

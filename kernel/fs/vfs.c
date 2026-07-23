@@ -490,7 +490,7 @@ vfs_node_t *vfs_create_symlink(const char *path, const char *target) {
 
 vfs_node_t *vfs_create_chr(const char *path,
                            int64_t (*rfn)(vfs_node_t *, char *, uint64_t, uint64_t),
-                           int64_t (*wfn)(vfs_node_t *, const char *, uint64_t)) {
+                           int64_t (*wfn)(vfs_node_t *, const char *, uint64_t, uint64_t)) {
     const char *leaf;
     vfs_node_t *parent = parent_of(path, &leaf);
     if (!parent) return NULL;
@@ -1267,7 +1267,7 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     vfs_node_t *n = f->node;
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_write) return (int64_t) len;
-        return n->chr_write(n, (const char *) buf, len);
+        return n->chr_write(n, (const char *) buf, len, f->pos);
     }
     if (n->type == VFS_TYPE_DIR) return -(int64_t) EISDIR;
     if (n->type == VFS_TYPE_REG) {
@@ -1330,7 +1330,7 @@ int64_t fd_lseek(int fd, int64_t off, int whence) {
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
     vfs_node_t *n = f->node;
-    if (n->type == VFS_TYPE_CHR) return -(int64_t) EINVAL;
+    if (n->type == VFS_TYPE_CHR && n->size == 0) return -(int64_t) EINVAL;
     int64_t new_pos;
     switch (whence) {
     case SEEK_SET:

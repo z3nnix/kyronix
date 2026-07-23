@@ -17,6 +17,7 @@
 #include "drivers/acpi.h"
 #include "drivers/ahci.h"
 #include "drivers/block.h"
+#include "drivers/blockdev.h"
 #include "drivers/fbdev.h"
 #include "drivers/input.h"
 #include "drivers/kbd.h"
@@ -31,6 +32,7 @@
 #include "fs/cpio.h"
 #include "fs/ext2.h"
 #include "fs/fstab.h"
+#include "fs/partition.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "lib/log.h"
@@ -344,6 +346,10 @@ void kmain(void) {
     block_init();
     ahci_init();
     kstatus("Initialising AHCI", ahci_ready());
+    blockdev_init();
+    partition_scan_all();
+    blockdev_create_all();
+    kstatus("Initialising block devices", true);
     virtnet_init();
     kstatus("Initialising virtio-net", virtnet_ready());
     net_init();

@@ -213,7 +213,7 @@ static int64_t vt_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     return 0;
 }
 
-static int64_t vt_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t vt_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) n;
     (void) buf;
     return (int64_t) len;

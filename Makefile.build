@@ -96,6 +96,7 @@ SRCS := \
     kernel/syscall/poll.c             \
     kernel/syscall/socket.c           \
     kernel/syscall/time.c             \
+    kernel/syscall/mount.c            \
     kernel/exec/elf.c                  \
     kernel/exec/process.c              \
     kernel/proc/proc.c                 \
@@ -115,7 +116,9 @@ SRCS := \
     kernel/fs/cpio.c                   \
     kernel/fs/fat32.c                  \
     kernel/fs/fstab.c                  \
+    kernel/fs/partition.c              \
     kernel/drivers/block.c            \
+    kernel/drivers/blockdev.c         \
     kernel/drivers/ahci.c             \
     kernel/drivers/serial.c           \
     kernel/drivers/kbd.c              \
@@ -253,7 +256,7 @@ $(DISK_IMG): $(TARGET) $(INITRD) user-build
 	cp $(TARGET) $(DISK_ROOT)/boot/kernel.elf
 	cp limine-disk.conf $(DISK_ROOT)/boot/limine/limine.conf
 	cp $(LIMINE_DIR)/limine-bios.sys $(DISK_ROOT)/boot/limine/
-	echo '/dev/ahci0 / ext2 rw,noatime 0 1' > $(DISK_ROOT)/etc/fstab
+	echo '/dev/sda / ext2 rw,noatime 0 1' > $(DISK_ROOT)/etc/fstab
 	# Regenerate fontconfig cache so it matches ext2 mtimes
 	rm -rf $(DISK_ROOT)/var/cache/fontconfig
 	fc-cache --sysroot $(DISK_ROOT) -f 2>/dev/null || true

@@ -41,7 +41,7 @@ static int64_t uio_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     return 4;
 }
 
-static int64_t uio_write(vfs_node_t *n, const char *buf, uint64_t len) {
+static int64_t uio_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
     (void) buf;
     (void) len;
     uio_dev_t *uio = (uio_dev_t *) n->data;
