@@ -190,13 +190,14 @@ KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
 
 SRC_DIR  := .
 
-.PHONY: all iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
+.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
 
 help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Build"
 	@echo "  all        Build kernel + initrd + disk.img (default)"
+	@echo "  kernel     Build kernel only (no userspace)"
 	@echo "  iso        Build persistent ISO  (kyronix-$(VERSION)-$(BUILD_TYPE)-$(ARCH).iso)"
 	@echo "  live-iso   Build live ISO        (kyronix-$(VERSION)-$(BUILD_TYPE)-$(ARCH)-live.iso)"
 	@echo "  test-iso   Build test ISO        (kyronix-$(VERSION)-$(BUILD_TYPE)-$(ARCH)-test.iso)"
@@ -228,6 +229,8 @@ help:
 
 all: config.h $(TARGET) $(INITRD) $(DISK_IMG)
 
+kernel: config.h $(TARGET)
+
 # Build kconfig tools from source (one-time, cached by make)
 $(KCONF) $(NCONF): $(wildcard scripts/kconfig/*.c scripts/kconfig/*.h scripts/kconfig/*.l scripts/kconfig/*.y scripts/kconfig/Makefile)
 	$(MAKE) -s -C $(@D)
@@ -248,7 +251,7 @@ nconfig: kernel/Kconfig $(NCONF)
 
 DISK_ROOT := disk_root
 
-$(DISK_IMG): $(TARGET) $(INITRD) user-build
+$(DISK_IMG): $(TARGET) $(INITRD) | user-build
 	@mkdir -p $(@D)
 	rm -rf $(DISK_ROOT)
 	mkdir -p $(DISK_ROOT)/boot/limine
@@ -318,14 +321,13 @@ $(BUILD_DIR)/%.o: %.S
 $(LIMINE_DIR)/limine: $(LIMINE_DIR)/limine.c
 	$(CC) $(LIMINE_DIR)/limine.c -o $@
 
-iso: $(TARGET) $(INITRD) $(LIMINE_DIR)/limine
+iso: $(TARGET) $(LIMINE_DIR)/limine
 	@mkdir -p $(DIST_DIR)
 	rm -rf iso_root
 	mkdir -p iso_root/boot/limine
 	mkdir -p iso_root/EFI/BOOT
 
 	cp $(TARGET)              iso_root/boot/kernel.elf
-	cp $(INITRD)              iso_root/boot/initrd.cpio
 	cp limine.conf            iso_root/boot/limine/limine.conf
 	cp $(LIMINE_DIR)/limine-bios.sys    iso_root/boot/limine/
 	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/limine/
