@@ -115,7 +115,7 @@ int main(void) {
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
     setenv("HOME", "/", 1);
     setenv("SHELL", "/bin/ksh", 1);
-    setenv("TERM", "vt100", 1);
+    setenv("TERM", "xterm-color", 1);
 
     read_rc_conf();
     fprintf(stderr, "\n");

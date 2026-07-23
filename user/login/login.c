@@ -132,7 +132,7 @@ int main(void) {
         setenv("HOME", pw->pw_dir, 1);
         setenv("SHELL", pw->pw_shell, 1);
         setenv("LOGNAME", pw->pw_name, 1);
-        setenv("TERM", "vt100", 1);
+        setenv("TERM", "xterm-color", 1);
         setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
 
         if (chdir(pw->pw_dir) < 0) chdir("/");

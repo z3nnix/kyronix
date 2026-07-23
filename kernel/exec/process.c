@@ -169,7 +169,7 @@ int process_exec(const void *data, uint64_t size, const char *name) {
     kfree((void *) data);
 
     const char *init_argv[] = { name, NULL };
-    const char *init_envp[] = { "TERM=vt100", "HOME=/", "PATH=/:/bin:/usr/bin", "SHELL=/init",
+    const char *init_envp[] = { "TERM=xterm-color", "HOME=/", "PATH=/:/bin:/usr/bin", "SHELL=/init",
                                 NULL };
     uint64_t rsp = setup_user_stack(res.space, &res, 1, init_argv, init_envp);
     if (!rsp) {

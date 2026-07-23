@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../boot/limine.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -19,6 +20,25 @@
 #define FONT_W 8
 #define FONT_H 16
 
+/* KFNT (Kyronix Font) header — little-endian */
+typedef struct {
+    char     magic[4];    /* "KFNT" */
+    uint16_t version;     /* 1 */
+    uint16_t width;       /* pixel width per glyph */
+    uint16_t height;      /* pixel height per glyph */
+    uint32_t num_glyphs;
+    uint32_t flags;       /* reserved */
+    uint32_t glyph_off;   /* byte offset to glyph data */
+    uint32_t uni_off;     /* byte offset to unicode lookup table */
+    uint32_t uni_count;   /* number of entries in unicode table */
+} __attribute__((packed)) kfnt_header_t;
+
+/* Unicode lookup entry — sorted by codepoint for binary search */
+typedef struct {
+    uint32_t codepoint;
+    uint16_t glyph_idx;
+} __attribute__((packed)) kfnt_uni_entry_t;
+
 typedef struct {
     void *addr;
     uint64_t phys_addr;
@@ -29,6 +49,10 @@ typedef struct {
     /* cursor */
     uint32_t col, row;
     uint32_t fg, bg;
+    bool bold;
+    bool cursor_visible;
+    /* VT100 charset state */
+    bool vt100_graphics;  /* whether VT100 Special Graphics is active */
 } fb_t;
 
 extern fb_t g_fb;
