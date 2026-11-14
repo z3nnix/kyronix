@@ -14,6 +14,7 @@
 CONTAINER_RUNTIME ?= $(if $(strip $(CRUNTIME)),$(CRUNTIME),podman)
 CONTAINER_IMAGE   ?= kyronix-build
 CONTAINER_TAG     ?= latest
+EXTENDED          ?= $(or $(shell cat build/.extended 2>/dev/null),0)
 
 ifneq ($(strip $(CRUNTIME)),)
 ifeq ($(strip $(INSIDE_CONTAINER)),)
@@ -51,10 +52,10 @@ container-run: container-build
 	    -v $(CURDIR)/./pkg-registry-src:/src/./pkg-registry-src:Z \
 	    -w /src \
 	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    make -j$$(nproc) INSIDE_CONTAINER=1 $(CONTAINER_GOALS)
+	    make -j$$(nproc) INSIDE_CONTAINER=1 EXTENDED=$(EXTENDED) $(CONTAINER_GOALS)
 
 $(BUILD_GOALS): container-run
-	@$(if $(filter run boot,$@),$(MAKE) INSIDE_CONTAINER=1 $@,:)
+	@$(if $(filter run boot,$@),$(MAKE) INSIDE_CONTAINER=1 EXTENDED=$(EXTENDED) $@,:)
 
 else
 include mk/main.mk

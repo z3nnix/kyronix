@@ -17,6 +17,7 @@
 #include "http.h"
 #include "md5.h"
 #include "util.h"
+#include "zstd_decode.h"
 
 int verbose_mode = 0;
 int yes_mode = 0;
@@ -720,11 +721,12 @@ static int do_install(ResolvedPkg *rp, const char *requested_by, int explicit) {
     char *tmp_dir = mkdtemp(tmp_template);
     if (!tmp_dir) dief("failed to create temporary directory");
 
-    char archive_path[512], checksum_path[512], script_path[512], extract_dir[512];
-    snprintf(archive_path, sizeof(archive_path), "%s/%s", tmp_dir, "package.gz");
-    snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.gz.md5");
+    char archive_path[512], checksum_path[512], script_path[512], extract_dir[512], tar_path[512];
+    snprintf(archive_path, sizeof(archive_path), "%s/%s", tmp_dir, "package.zst");
+    snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.zst.md5");
     snprintf(script_path, sizeof(script_path), "%s/%s", tmp_dir, "install.sh");
     snprintf(extract_dir, sizeof(extract_dir), "%s/%s", tmp_dir, "extract");
+    snprintf(tar_path, sizeof(tar_path), "%s/%s", tmp_dir, "package.tar");
     ensure_dir(extract_dir);
 
     const char *install_dir = "/usr/bin";
@@ -761,12 +763,11 @@ static int do_install(ResolvedPkg *rp, const char *requested_by, int explicit) {
 
     fprintf(stdout, "%s=>%s extracting...", ANSI_CYAN, ANSI_RESET);
     fflush(stdout);
+    if (zstd_decode_file(archive_path, tar_path) != 0) dief("archive decompression failed");
     char *tar_argv[] = { "tar",
                          "-x",
-                         "-I",
-                         "gzip -dcf",
                          "-f",
-                         archive_path,
+                         tar_path,
                          "-C",
                          extract_dir,
                          "--transform=flags=r;s|^\\.$|__skip__|",
@@ -774,6 +775,7 @@ static int do_install(ResolvedPkg *rp, const char *requested_by, int explicit) {
                          "--no-same-permissions",
                          NULL };
     if (run_cmd(tar_argv) != 0) dief("archive extraction failed");
+    unlink(tar_path);
     fprintf(stdout, " %sok%s\n", ANSI_GREEN, ANSI_RESET);
 
     char pre_scan[1024];

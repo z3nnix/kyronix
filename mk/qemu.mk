@@ -19,7 +19,7 @@ QEMU_NET_ARGS = -netdev user,id=n0 -device virtio-net-pci,netdev=n0
 
 .PHONY: run boot
 
-run: $(ISO) $(DISK)
+run: _iso $(DISK)
 	@$(call phase,Launching QEMU (live ISO))
 	$(QEMU_ENV) $(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \

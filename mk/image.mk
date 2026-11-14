@@ -1,3 +1,5 @@
+EXTENDED ?= 0
+
 BOOT_FAT        := $(BUILD)/installer-boot.fat
 INITRD_ROOT     := $(BUILD)/initrd-root
 ISO_ROOT        := $(BUILD)/iso-root
@@ -6,7 +8,19 @@ INITRD          := $(BUILD)/initrd.cpio
 RELEASE ?= 0
 STATUS  := $(if $(filter 1,$(RELEASE)),RELEASE,INDEV)
 OS_RELEASE := $(BUILD)/os-release-$(STATUS)
-PKG_LIST   := $(wildcard packages.list)
+PKG_LIST   := $(if $(filter 1,$(EXTENDED)),$(wildcard packages.list),)
+PKG_FILES  := $(if $(filter 1,$(EXTENDED)),$(wildcard pkg-registry-src/*/package.zst pkg-registry-src/*/package.zst.md5 pkg-registry-src/*/config.toml) scripts/local-pkg-install,)
+LIMINE_CONF := $(BUILD)/limine.conf
+EXTENDED_STAMP := $(BUILD)/.extended
+
+.PHONY: _extended-check
+_extended-check:
+	@mkdir -p $(BUILD)
+	@if [ ! -f $(EXTENDED_STAMP) ] || [ "$$(cat $(EXTENDED_STAMP) 2>/dev/null)" != "$(EXTENDED)" ]; then \
+	    rm -f $(INITRD) $(LIMINE_CONF) $(ISO); \
+	    rm -rf $(INITRD_ROOT) $(ISO_ROOT); \
+	    printf '%s\n' '$(EXTENDED)' > $(EXTENDED_STAMP); \
+	fi
 
 $(OS_RELEASE):
 	@mkdir -p $(@D)
@@ -58,16 +72,16 @@ $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine
 	@mcopy -i $@ $(LIMINE)/limine-bios.sys ::/boot/limine/
 	@$(call ok,$@)
 
-# --- shared initrd root filesystem ---
-$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(GALCULATOR_STAMP)
+# --- initrd root filesystem ---
+$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(PKG_FILES) $(GALCULATOR_STAMP)
 	@if [ -d $(INITRD_ROOT) ]; then chmod -R u+w $(INITRD_ROOT) 2>/dev/null || true; rm -rf $(INITRD_ROOT); fi
 	@mkdir -p $(INITRD_ROOT)/boot/limine
 	@mkdir -p $(INITRD_ROOT)/lib/modules
 	@mkdir -p $(INITRD_ROOT)/usr/share/kyronix
 	@cp -a rootfs/. $(INITRD_ROOT)/
-	@if [ -f packages.list ]; then \
+	@if [ -n "$(PKG_LIST)" ]; then \
 		$(call phase,Local packages); \
-		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list packages.list || true; \
+		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list $(PKG_LIST); \
 		$(call ok,Local packages); \
 	fi
 	@mkdir -p $(INITRD_ROOT)/var/lib/flatpak $(INITRD_ROOT)/var/lib/dbus \
@@ -123,11 +137,19 @@ define build_iso
 	@$(call ok,$(5))
 endef
 
-$(ISO): $(KERNEL) $(INITRD) boot/limine.conf \
+$(LIMINE_CONF): boot/limine.conf
+	@mkdir -p $(@D)
+	@if [ "$(EXTENDED)" = "0" ]; then \
+	    sed '/^\/Kyronix (Weston)$$/,/^$$/d' $< > $@; \
+	else \
+	    cp $< $@; \
+	fi
+
+$(ISO): $(KERNEL) $(INITRD) $(LIMINE_CONF) \
 		boot/wallpaper.jpg $(LIMINE_FILES) $(LIMINE)/limine
 	@$(call phase,ISO)
 	@mkdir -p $(@D)
-	$(call build_iso,$(ISO_ROOT),boot/limine.conf,$(INITRD),boot/wallpaper.jpg,$(ISO))
+	$(call build_iso,$(ISO_ROOT),$(LIMINE_CONF),$(INITRD),boot/wallpaper.jpg,$(ISO))
 
 $(DISK):
 	@mkdir -p $(@D)
