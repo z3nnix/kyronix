@@ -135,7 +135,12 @@ $(INITRD): $(INITRD_ROOT)
 	@$(call phase,Initrd)
 	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
-	    > "$(abspath $(INITRD))" 2>/dev/null
+	    > "$(abspath $(INITRD)).raw" 2>/dev/null
+	@sz=$$(stat -c%s "$(abspath $(INITRD)).raw"); \
+	    { printf 'KXZ1'; printf '%016x' "$$sz"; \
+	      xz -9e -T0 --check=crc32 -c "$(abspath $(INITRD)).raw"; } \
+	    > "$(abspath $(INITRD))"
+	@rm -f "$(abspath $(INITRD)).raw"
 	@$(call ok,$(INITRD))
 
 define build_iso

@@ -6,7 +6,7 @@ RUN apk add --no-cache \
     nasm \
     bison flex \
     ncurses-dev \
-    cpio \
+    cpio xz \
     e2fsprogs dosfstools mtools \
     xorriso squashfs-tools \
     qemu-system-x86_64 \

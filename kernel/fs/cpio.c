@@ -1,8 +1,13 @@
 #include "cpio.h"
+#include "../lib/xz/xz_kernel.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "mm/heap.h"
 #include "vfs.h"
+
+#define CPIO_XZ_MAGIC "KXZ1"
+#define CPIO_XZ_HDR_SIZE 20
+#define CPIO_XZ_MAX_SIZE (1ULL << 30)
 
 static bool hex8(const char *s, uint32_t *out) {
     uint32_t v = 0;
@@ -15,6 +20,25 @@ static bool hex8(const char *s, uint32_t *out) {
             d = (uint32_t) (c - 'A') + 10;
         else if (c >= 'a' && c <= 'f')
             d = (uint32_t) (c - 'a') + 10;
+        else
+            return false;
+        v = (v << 4) | d;
+    }
+    *out = v;
+    return true;
+}
+
+static bool hex64(const char *s, uint64_t *out) {
+    uint64_t v = 0;
+    for (int i = 0; i < 16; i++) {
+        char c = s[i];
+        uint64_t d;
+        if (c >= '0' && c <= '9')
+            d = (uint64_t) (c - '0');
+        else if (c >= 'A' && c <= 'F')
+            d = (uint64_t) (c - 'A') + 10;
+        else if (c >= 'a' && c <= 'f')
+            d = (uint64_t) (c - 'a') + 10;
         else
             return false;
         v = (v << 4) | d;
@@ -57,7 +81,7 @@ static bool archive_path_safe(const char *path, size_t len) {
     return true;
 }
 
-int cpio_load(const void *data, uint64_t total_size) {
+static int cpio_load_plain(const void *data, uint64_t total_size) {
     if (!data || total_size < CPIO_HDR_SIZE) return -1;
 
     const uint8_t *base = (const uint8_t *) data;
@@ -151,4 +175,33 @@ int cpio_load(const void *data, uint64_t total_size) {
 
     log_info("CPIO: loaded %d files into ramfs", count);
     return 0;
+}
+
+int cpio_load(const void *data, uint64_t total_size) {
+    if (!data) return -1;
+
+    const uint8_t *base = (const uint8_t *) data;
+    if (total_size < CPIO_XZ_HDR_SIZE || memcmp(base, CPIO_XZ_MAGIC, 4) != 0)
+        return cpio_load_plain(data, total_size);
+
+    uint64_t plain_size;
+    if (!hex64((const char *) base + 4, &plain_size)) return -1;
+    if (plain_size == 0 || plain_size > CPIO_XZ_MAX_SIZE) return -1;
+
+    uint8_t *plain = kmalloc(plain_size);
+    if (!plain) return -1;
+
+    kxz_init();
+    int64_t written = kxz_decode(base + CPIO_XZ_HDR_SIZE, total_size - CPIO_XZ_HDR_SIZE, plain,
+                                 plain_size);
+    if (written != (int64_t) plain_size) {
+        log_error("CPIO: xz decompression failed");
+        kfree(plain);
+        return -1;
+    }
+
+    log_info("CPIO: decompressed %lu -> %lu bytes", total_size, plain_size);
+    int result = cpio_load_plain(plain, plain_size);
+    kfree(plain);
+    return result;
 }
