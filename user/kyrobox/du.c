@@ -71,7 +71,9 @@ static unsigned long long walk_path(const char *path, int depth, const du_option
     return bytes;
 }
 
-int main(int argc, char **argv) {
+int du_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "du";
     du_options_t o = { .unit = 1024, .max_depth = INT_MAX };
     int first = 1;
@@ -140,3 +142,10 @@ int main(int argc, char **argv) {
     if (o.total) print_size(total, "total", &o);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return du_main(argc, argv);
+}
+#endif

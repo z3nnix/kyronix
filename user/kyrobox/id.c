@@ -1,7 +1,9 @@
 #include "common.h"
 #include <grp.h>
 
-int main(int argc, char **argv) {
+int id_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "id";
     uid_t uid;
     gid_t gid;
@@ -45,3 +47,10 @@ int main(int argc, char **argv) {
     putchar('\n');
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return id_main(argc, argv);
+}
+#endif

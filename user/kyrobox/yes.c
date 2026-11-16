@@ -1,6 +1,9 @@
 #include "common.h"
 
-int main(int argc, char **argv) {
+int yes_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
+	kx_prog = "yes";
     int first = 1;
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         puts("usage: yes [STRING]...");
@@ -40,3 +43,10 @@ int main(int argc, char **argv) {
     free(line);
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return yes_main(argc, argv);
+}
+#endif

@@ -1,7 +1,9 @@
 #define _DEFAULT_SOURCE
 #include "common.h"
 
-int main(int argc, char **argv) {
+int chroot_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
     if (argc < 2) {
         fprintf(stderr, "usage: %s <newroot> [cmd args...]\n", kx_prog);
@@ -21,3 +23,10 @@ int main(int argc, char **argv) {
     kx_warn(argv[2]);
     return 127;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return chroot_main(argc, argv);
+}
+#endif

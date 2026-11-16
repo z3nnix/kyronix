@@ -35,7 +35,9 @@ static void usage(void) {
     exit(1);
 }
 
-int main(int argc, char **argv) {
+int ping_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "ping";
     int count = 4;
     const char *host = NULL;
@@ -152,3 +154,10 @@ int main(int argc, char **argv) {
     close(fd);
     return (received == count) ? 0 : 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return ping_main(argc, argv);
+}
+#endif

@@ -40,7 +40,9 @@ static bool parse_double(const char *s, double *out) {
     return true;
 }
 
-int main(int argc, char **argv) {
+int seq_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "seq";
     const char *format = NULL, *separator = "\n";
     bool equal_width = false;
@@ -130,3 +132,10 @@ int main(int argc, char **argv) {
     if (printed) putchar('\n');
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return seq_main(argc, argv);
+}
+#endif

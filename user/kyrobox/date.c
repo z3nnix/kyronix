@@ -28,7 +28,9 @@ static bool parse_time(const char *value, time_t *result) {
     return false;
 }
 
-int main(int argc, char **argv) {
+int date_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "date";
     bool utc = false;
     bool set_clock = false;
@@ -104,3 +106,10 @@ int main(int argc, char **argv) {
     puts(output);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return date_main(argc, argv);
+}
+#endif

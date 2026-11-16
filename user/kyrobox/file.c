@@ -190,7 +190,9 @@ static void do_file(const char *path) {
         putchar('\n');
 }
 
-int main(int argc, char **argv) {
+int file_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "file";
 
     int first = 1;
@@ -255,3 +257,10 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return file_main(argc, argv);
+}
+#endif

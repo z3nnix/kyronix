@@ -11,7 +11,9 @@ static int build_template(char *output, size_t size, const char *directory, cons
     return n >= 0 && (size_t) n < size ? 0 : -1;
 }
 
-int main(int argc, char **argv) {
+int mktemp_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "mktemp";
     bool directory_mode = false;
     bool quiet = false;
@@ -103,3 +105,10 @@ int main(int argc, char **argv) {
     puts(path);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return mktemp_main(argc, argv);
+}
+#endif

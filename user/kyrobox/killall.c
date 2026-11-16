@@ -18,7 +18,9 @@ static int sig_from_name(const char *s) {
     return -1;
 }
 
-int main(int argc, char **argv) {
+int killall_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "killall";
 
     int sig = SIGTERM;
@@ -73,3 +75,10 @@ int main(int argc, char **argv) {
     fclose(f);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return killall_main(argc, argv);
+}
+#endif

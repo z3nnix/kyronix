@@ -22,7 +22,9 @@ static void usage(void) {
     fprintf(stderr, "  -p       power off (for reboot)\n");
 }
 
-int main(int argc, char **argv) {
+int reboot_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
 
     int cmd;
@@ -67,3 +69,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return reboot_main(argc, argv);
+}
+#endif

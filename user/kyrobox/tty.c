@@ -1,6 +1,8 @@
 #include "common.h"
 
-int main(int argc, char **argv) {
+int tty_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "tty";
     bool silent = false;
     int i = 1;
@@ -26,3 +28,10 @@ int main(int argc, char **argv) {
     if (!silent) puts(name ? name : "not a tty");
     return name ? 0 : 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return tty_main(argc, argv);
+}
+#endif

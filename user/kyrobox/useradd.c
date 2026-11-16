@@ -97,12 +97,14 @@ static void add_to_group(const char *gname, const char *user) {
     rename(tmp, "/etc/group");
 }
 
-int main(int argc, char **argv) {
+int useradd_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "useradd";
 
     const char *comment = "";
     const char *home = NULL;
-    const char *shell = "/bin/ksh";
+    const char *shell = "/bin/kxsh";
     const char *password = NULL;
     const char *supgroups = NULL;
     int create_home = 0;
@@ -276,3 +278,10 @@ int main(int argc, char **argv) {
     printf("useradd: user '%s' added (uid=%d, gid=%d)\n", login, uid, gid);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return useradd_main(argc, argv);
+}
+#endif

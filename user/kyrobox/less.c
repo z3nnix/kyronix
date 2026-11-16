@@ -328,7 +328,9 @@ static void usage(void) {
     exit(0);
 }
 
-int main(int argc, char **argv) {
+int less_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "less";
     if (argc > 1 && strcmp(argv[1], "--help") == 0) usage();
     has_file = argc > 1;
@@ -424,3 +426,10 @@ int main(int argc, char **argv) {
         }
     }
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return less_main(argc, argv);
+}
+#endif

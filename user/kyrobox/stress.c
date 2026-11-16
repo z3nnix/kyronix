@@ -47,7 +47,9 @@ static void usage(void) {
     exit(1);
 }
 
-int main(int argc, char **argv) {
+int stress_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "stress";
     int ncores = (int) sysconf(_SC_NPROCESSORS_ONLN);
     if (ncores < 1) ncores = 1;
@@ -147,3 +149,10 @@ int main(int argc, char **argv) {
     free(pipes);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return stress_main(argc, argv);
+}
+#endif

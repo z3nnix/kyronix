@@ -1,5 +1,5 @@
 #include "common.h"
-int main(int argc, char **argv) {
+int pwd_main(int argc, char **argv) {
     (void) argc;
     (void) argv;
     char cwd[PATH_MAX];
@@ -11,3 +11,10 @@ int main(int argc, char **argv) {
     puts(cwd);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return pwd_main(argc, argv);
+}
+#endif

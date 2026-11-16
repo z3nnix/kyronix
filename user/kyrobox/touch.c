@@ -88,7 +88,9 @@ static bool parse_stamp(const char *value, struct timespec *result) {
     return true;
 }
 
-int main(int argc, char **argv) {
+int touch_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "touch";
     touch_options_t o = { 0 };
     const char *reference = NULL;
@@ -199,3 +201,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return touch_main(argc, argv);
+}
+#endif

@@ -34,7 +34,9 @@ static int copy_file_to_stdout(const char *path) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int lspci_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "lspci";
     (void) argv;
     if (argc != 1) {
@@ -43,3 +45,10 @@ int main(int argc, char **argv) {
     }
     return copy_file_to_stdout("/proc/bus/pci/devices");
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return lspci_main(argc, argv);
+}
+#endif

@@ -75,7 +75,9 @@ static int walk(const char *path) {
     return rc;
 }
 
-int main(int argc, char **argv) {
+int find_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "find";
     const char *root = ".";
     int i = 1;
@@ -94,3 +96,10 @@ int main(int argc, char **argv) {
     }
     return walk(root);
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return find_main(argc, argv);
+}
+#endif

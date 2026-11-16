@@ -1,24 +1,21 @@
 CC := gcc
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build
-LDFLAGS ?= -static 
-OUT := ../../build/bin/ksh
+CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -I../kyrobox -L../../build
+LDFLAGS ?= -static
+OUT := ../../build/bin/kxsh
 
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)
 
 include ../../mk/output.mk
 
-.PHONY: all check-musl clean
+.PHONY: all clean
 
-all: check-musl $(OUT)
+all: $(OUT)
 
-check-musl:
-	@command -v $(CC) >/dev/null 2>&1 || { echo "clang not found"; exit 1; }
-
-$(OUT): ksh.c
+$(OUT): kxsh.c ../kyrobox/kx_resolver.c ../kyrobox/kx_resolver.h
 	@$(call step,CC $<)
 	@mkdir -p ../../build/bin
-	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ kxsh.c ../kyrobox/kx_resolver.c
 
 clean:
 	rm -f $(OUT)

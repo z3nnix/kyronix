@@ -54,7 +54,9 @@ static void print_counts(const counts_t *count, const wc_options_t *o, const cha
     putchar('\n');
 }
 
-int main(int argc, char **argv) {
+int wc_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "wc";
     wc_options_t o = { 0 };
     bool selected = false;
@@ -125,3 +127,10 @@ int main(int argc, char **argv) {
     if (files > 1) print_counts(&total, &o, "total");
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return wc_main(argc, argv);
+}
+#endif

@@ -125,7 +125,9 @@ static int list_one(const char *path, bool longfmt, bool head, bool showall, boo
     free(names);
     return 0;
 }
-int main(int argc, char **argv) {
+int ls_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "ls";
     bool longfmt = false;
     bool showall = false;
@@ -162,3 +164,10 @@ int main(int argc, char **argv) {
     for (int i = first; i < argc; i++) rc |= list_one(argv[i], longfmt, multi, showall, hsize);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return ls_main(argc, argv);
+}
+#endif

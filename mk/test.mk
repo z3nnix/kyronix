@@ -185,15 +185,35 @@ $(TEST_ROOTFS_STAMP): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bi
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko
 	cp $(TEST_DEP_MODULE) $(TEST_ROOTFS)/lib/modules/hello_user.ko
-	cp $(BUILD)/bin/ksh $(TEST_ROOTFS)/bin/
-	ln -sf ksh $(TEST_ROOTFS)/bin/sh
-	for app in basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
-	    dirname du echo env false find grep head hostname kair kill killall less \
-	    link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd \
-	    readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \
-	    tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \
-	    cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; \
-	done
+	cp $(BUILD)/bin/kxsh $(TEST_ROOTFS)/bin/ 2>/dev/null || true
+	@if [ -f $(BUILD)/bin/kyrobox ] && [ "$(KYROBOX_SPLIT)" != "1" ]; then \
+	    cp $(BUILD)/bin/kyrobox $(TEST_ROOTFS)/bin/; \
+	    for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	        fdisk find file grep head hostname id insmod kair kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
+	        passwd reboot rm rmdir rmmod sed seq sleep sort stat stress sync tail tee test top touch tr true tty umount uname uniq unlink useradd userdel wc wget which whoami xargs yes tree \
+	        init login logctl servctl jailctl vi kxsh sh '[' poweroff halt; do ln -sf kyrobox $(TEST_ROOTFS)/bin/$$app; done; \
+	else \
+	    for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	        fdisk find file grep head hostname id insmod kair kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
+	        passwd reboot rm rmdir rmmod sed seq sleep sort stat stress sync tail tee test top touch tr true tty umount uname uniq unlink useradd userdel wc wget which whoami xargs yes tree \
+	        init login logctl servctl jailctl vi; do \
+	        if [ -f $(BUILD)/bin/$$app ]; then cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; fi; \
+	    done; \
+	    if [ -f $(BUILD)/bin/kxsh ]; then cp $(BUILD)/bin/kxsh $(TEST_ROOTFS)/bin/; fi; \
+	    ln -sf kxsh $(TEST_ROOTFS)/bin/sh 2>/dev/null || true; \
+	    ln -sf test $(TEST_ROOTFS)/bin/[ 2>/dev/null || true; \
+	    ln -sf reboot $(TEST_ROOTFS)/bin/poweroff 2>/dev/null || true; \
+	    ln -sf reboot $(TEST_ROOTFS)/bin/halt 2>/dev/null || true; \
+	fi
+	@if [ "$(KYROBOX_SPLIT)" = "1" ]; then \
+	    for app in basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
+	        dirname du echo env false find grep head hostname kair kill killall less \
+	        link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd \
+	        readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \
+	        tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \
+	        if [ -f $(BUILD)/bin/$$app ]; then cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; fi; \
+	    done; \
+	fi
 	@if [ -s $(BUILD)/bin/bash ]; then cp $(BUILD)/bin/bash $(TEST_ROOTFS)/bin/; \
 	else echo "  [WARN] no static bash; script AppRun tests will skip"; fi
 	for bin in tar gzip gunzip bzip2 bunzip2 xz unxz; do \

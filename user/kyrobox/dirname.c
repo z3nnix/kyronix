@@ -23,7 +23,9 @@ static char *directory_name(const char *path) {
     return copy;
 }
 
-int main(int argc, char **argv) {
+int dirname_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "dirname";
     bool zero = false;
     int i = 1;
@@ -54,3 +56,10 @@ int main(int argc, char **argv) {
     }
     return rc || ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return dirname_main(argc, argv);
+}
+#endif

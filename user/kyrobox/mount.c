@@ -39,7 +39,9 @@ static unsigned long parse_flags(const char *opt) {
     return flags;
 }
 
-int main(int argc, char **argv) {
+int mount_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
     const char *type = NULL;
     const char *opt = NULL;
@@ -85,3 +87,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return mount_main(argc, argv);
+}
+#endif

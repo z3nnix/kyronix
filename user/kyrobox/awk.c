@@ -1693,7 +1693,9 @@ static void process_file(FILE *f, Item *items, int *exited) {
     free(line);
 }
 
-int main(int argc, char **argv) {
+int awk_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "awk";
     int i = 1;
     ExprList dummy = { 0 };
@@ -1777,3 +1779,10 @@ int main(int argc, char **argv) {
     run_items(items, PAT_END);
     return exit_code ? exit_code : rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return awk_main(argc, argv);
+}
+#endif

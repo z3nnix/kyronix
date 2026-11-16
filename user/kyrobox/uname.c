@@ -19,7 +19,9 @@ static void add_field(const char *value, bool *first) {
     *first = false;
 }
 
-int main(int argc, char **argv) {
+int uname_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "uname";
     unsigned flags = 0;
     for (int i = 1; i < argc; i++) {
@@ -76,3 +78,10 @@ int main(int argc, char **argv) {
     putchar('\n');
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return uname_main(argc, argv);
+}
+#endif

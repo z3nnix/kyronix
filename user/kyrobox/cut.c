@@ -116,7 +116,9 @@ static int cut_stream(FILE *f, int mode, unsigned char delimiter, bool only_deli
     return rc;
 }
 
-int main(int argc, char **argv) {
+int cut_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "cut";
     int mode = 0, i = 1, record_delimiter = '\n';
     unsigned char delimiter = '\t';
@@ -190,3 +192,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return cut_main(argc, argv);
+}
+#endif

@@ -1,6 +1,8 @@
 #include "common.h"
 
-int main(void) {
+int lsmod_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "lsmod";
     int fd = open("/proc/modules", O_RDONLY);
     if (fd < 0) {
@@ -18,3 +20,10 @@ int main(void) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return lsmod_main(argc, argv);
+}
+#endif

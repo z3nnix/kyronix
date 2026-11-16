@@ -77,7 +77,9 @@ static void find_mountpoint(const char *name, char *out, size_t size) {
     fclose(mounts);
 }
 
-int main(int argc, char **argv) {
+int lsblk_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "lsblk";
     int raw_size = 0;
     int first = 1;
@@ -136,3 +138,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return lsblk_main(argc, argv);
+}
+#endif

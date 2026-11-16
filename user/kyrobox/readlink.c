@@ -79,7 +79,9 @@ static int canonical_missing_final(const char *path, char *output) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int readlink_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "readlink";
     enum { RAW, CANON_FINAL, CANON_ALL, CANON_MISSING } mode = RAW;
     bool newline = true;
@@ -161,3 +163,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return readlink_main(argc, argv);
+}
+#endif

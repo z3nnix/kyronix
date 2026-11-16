@@ -279,7 +279,7 @@ static void servctl_logs(const char *name) {
     fclose(f);
 }
 
-int main(int argc, char **argv) {
+int servctl_main(int argc, char **argv) {
     if (argc < 2) {
         usage();
         return 1;
@@ -375,3 +375,10 @@ int main(int argc, char **argv) {
     usage();
     return 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return servctl_main(argc, argv);
+}
+#endif

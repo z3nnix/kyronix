@@ -116,7 +116,7 @@ static int grep_path(const char *path, bool show_name, int *rc) {
     }
     if (S_ISDIR(st.st_mode)) {
         if (!o.recursive) {
-            fprintf(stderr, "%s: %s: Is a directory\n", kx_prog, path);
+            fprintf(stderr, "%s: %s: Is a directory\n", kx_prog ? kx_prog : "grep", path);
             *rc = 2;
             return 0;
         }
@@ -125,7 +125,9 @@ static int grep_path(const char *path, bool show_name, int *rc) {
     return grep_file(path, show_name, rc);
 }
 
-int main(int argc, char **argv) {
+int grep_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "grep";
     int i = 1;
     for (; i < argc; i++) {
@@ -187,3 +189,10 @@ int main(int argc, char **argv) {
     if (have_re) regfree(&re);
     return found ? 0 : rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return grep_main(argc, argv);
+}
+#endif

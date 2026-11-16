@@ -4,7 +4,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-int main(int argc, char **argv) {
+int nslookup_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "nslookup";
     if (argc < 2) {
         fprintf(stderr, "Usage: nslookup <host>\n");
@@ -40,3 +42,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return nslookup_main(argc, argv);
+}
+#endif

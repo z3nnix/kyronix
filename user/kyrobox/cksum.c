@@ -33,7 +33,9 @@ static int sum_file(const char *path) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int cksum_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "cksum";
     init_crc();
     if (argc == 1) return sum_file(NULL);
@@ -41,3 +43,10 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) rc |= sum_file(argv[i]);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return cksum_main(argc, argv);
+}
+#endif

@@ -2,7 +2,9 @@
 #include "common.h"
 #include <sys/syscall.h>
 
-int main(int argc, char **argv) {
+int rmmod_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "rmmod";
     if (argc != 2) {
         fprintf(stderr, "usage: rmmod MODULE\n");
@@ -14,3 +16,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return rmmod_main(argc, argv);
+}
+#endif

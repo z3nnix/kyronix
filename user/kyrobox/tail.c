@@ -103,7 +103,9 @@ static void header(const char *name, bool *first) {
     *first = false;
 }
 
-int main(int argc, char **argv) {
+int tail_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "tail";
     options_t o = { .mode = MODE_LINES, .count = 10 };
     int i = 1;
@@ -205,3 +207,10 @@ int main(int argc, char **argv) {
     free(streams);
     return rc || ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return tail_main(argc, argv);
+}
+#endif

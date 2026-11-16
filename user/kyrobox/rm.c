@@ -50,7 +50,9 @@ static int rm_recursive(const char *path, bool force) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int rm_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "rm";
     bool force = false;
     bool recursive = false;
@@ -89,3 +91,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return rm_main(argc, argv);
+}
+#endif

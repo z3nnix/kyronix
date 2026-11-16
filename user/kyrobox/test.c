@@ -153,7 +153,9 @@ static bool parse_or(parser_t *p) {
     return result;
 }
 
-int main(int argc, char **argv) {
+int test_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "test";
     int first = 1;
 
@@ -178,3 +180,10 @@ int main(int argc, char **argv) {
     }
     return result ? 0 : 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return test_main(argc, argv);
+}
+#endif

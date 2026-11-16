@@ -138,7 +138,9 @@ static void complement_set(byte_set_t *set) {
 
 static void usage(void) { fprintf(stderr, "usage: tr [-cdst] SET1 [SET2]\n"); }
 
-int main(int argc, char **argv) {
+int tr_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "tr";
     bool complement = false, delete = false, squeeze = false, truncate = false;
     int i = 1;
@@ -185,20 +187,31 @@ int main(int argc, char **argv) {
     } else if (operands == 2) {
         size_t nmap = truncate && set1.n > set2.n ? set2.n : set1.n;
         for (size_t n = 0; n < nmap; n++) map[set1.v[n]] = set2.v[n < set2.n ? n : set2.n - 1];
+        if (!truncate && set2.n > 0)
+            for (size_t n = nmap; n < set1.n; n++) map[set1.v[n]] = set2.v[set2.n - 1];
     }
     if (squeeze) {
-        byte_set_t *sq = (!delete && operands == 2) ? &set2 : &set1;
+        byte_set_t *sq = &set1;
+        if (operands == 2 && (delete || set2.n > 0 || !set1.n)) sq = &set2;
         for (size_t n = 0; n < sq->n; n++) squash[sq->v[n]] = true;
     }
 
-    int c, previous = -1;
+    int c;
+    int previous = -1;
     while ((c = getchar()) != EOF) {
         unsigned char in = (unsigned char) c;
         if (remove[in]) continue;
         unsigned char out = map[in];
-        if (squeeze && previous == out && squash[out]) continue;
+        if (squeeze && squash[out] && previous == (int) out) continue;
         if (putchar(out) == EOF) return 1;
-        previous = out;
+        previous = (int) out;
     }
     return ferror(stdin) || ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return tr_main(argc, argv);
+}
+#endif

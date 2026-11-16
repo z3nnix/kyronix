@@ -236,7 +236,9 @@ out: {
 
 static void usage(void) { fprintf(stderr, "usage: passwd [user]\n"); }
 
-int main(int argc, char **argv) {
+int passwd_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "passwd";
     if (argc > 2 || (argc == 2 && argv[1][0] == '-')) {
         usage();
@@ -357,3 +359,10 @@ out:
     close(tty);
     return status;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return passwd_main(argc, argv);
+}
+#endif

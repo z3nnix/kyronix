@@ -24,7 +24,9 @@ static void mode_string(mode_t m, char out[12]) {
     out[10] = 0;
 }
 
-int main(int argc, char **argv) {
+int stat_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "stat";
     bool flag_L = false;
     int first = 1;
@@ -61,3 +63,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return stat_main(argc, argv);
+}
+#endif

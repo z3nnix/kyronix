@@ -1,6 +1,8 @@
 #include "common.h"
 #include <grp.h>
-int main(int argc, char **argv) {
+int chgrp_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "chgrp";
     if (argc < 3) kx_die("usage: chgrp GROUP FILE...");
     char *end = NULL;
@@ -19,3 +21,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return chgrp_main(argc, argv);
+}
+#endif

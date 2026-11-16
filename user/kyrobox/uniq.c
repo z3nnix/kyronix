@@ -56,7 +56,9 @@ static unsigned long option_number(const char *attached, int *index, int argc, c
     return result;
 }
 
-int main(int argc, char **argv) {
+int uniq_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "uniq";
     uniq_options_t o = { 0 };
     int first = 1;
@@ -146,3 +148,10 @@ int main(int argc, char **argv) {
     if (output != stdout) fclose(output);
     return rc ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return uniq_main(argc, argv);
+}
+#endif

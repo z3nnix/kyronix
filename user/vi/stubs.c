@@ -149,4 +149,7 @@ int32_t read_key(int fd, char *buf UNUSED_PARAM, int timeout) {
 }
 
 int vi_main(int, char **);
+
+#ifndef KX_MONOLITHIC
 int main(int argc, char **argv) { return vi_main(argc, argv); }
+#endif

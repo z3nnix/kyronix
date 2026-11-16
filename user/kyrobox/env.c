@@ -12,7 +12,9 @@ static bool assignment(const char *value) {
     return true;
 }
 
-int main(int argc, char **argv) {
+int env_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "env";
     bool empty = false;
     bool zero = false;
@@ -73,3 +75,10 @@ int main(int argc, char **argv) {
     kx_warn(argv[i]);
     return status;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return env_main(argc, argv);
+}
+#endif

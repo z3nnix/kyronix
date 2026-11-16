@@ -87,7 +87,9 @@ static int parse_symbolic(const char *mode_str, mode_t current_mode) {
     return (int) (new_mode & 07777U);
 }
 
-int main(int argc, char **argv) {
+int chmod_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "chmod";
     if (argc < 3) kx_die("usage: chmod MODE FILE...");
 
@@ -118,3 +120,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return chmod_main(argc, argv);
+}
+#endif

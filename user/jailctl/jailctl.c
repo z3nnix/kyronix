@@ -344,7 +344,7 @@ static int attach_command(int argc, char **argv) {
     return 126;
 }
 
-int main(int argc, char **argv) {
+int jailctl_main(int argc, char **argv) {
     kx_prog = "jailctl";
     if (argc < 2) {
         usage(stderr);
@@ -401,3 +401,10 @@ int main(int argc, char **argv) {
     usage(stderr);
     return 2;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return jailctl_main(argc, argv);
+}
+#endif

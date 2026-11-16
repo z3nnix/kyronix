@@ -19,8 +19,10 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include "../kyrobox/kx_resolver.h"
+#include "../kyrobox/kyrobox.h"
 
-#define KSH_VERSION "1.0"
+#define KXSH_VERSION "0.4"
 #define MAX_ARGS 32
 #define MAX_LINE 4096
 #define MAX_HISTORY 64
@@ -442,7 +444,7 @@ static const char *history_path(void) {
 
 static void history_load(void) {
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/.ksh_history", history_path());
+    snprintf(path, sizeof(path), "%s/.kxsh_history", history_path());
 
     FILE *file = fopen(path, "r");
     if (file == NULL) { return; }
@@ -465,7 +467,7 @@ static void history_load(void) {
 
 static void history_save(void) {
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/.ksh_history", history_path());
+    snprintf(path, sizeof(path), "%s/.kxsh_history", history_path());
 
     FILE *file = fopen(path, "w");
     if (file == NULL) { return; }
@@ -1070,18 +1072,26 @@ static int resolve_path(const char *target, char *result, size_t result_size) {
 }
 
 static int shell_execvp(const char *file, char **argv) {
-    if (strchr(file, '/')) {
-        static char resolved[PATH_MAX];
-        if (resolve_path(file, resolved, sizeof(resolved)) == 0) {
-            execv(resolved, argv);
-        } else {
-            errno = ENOENT;
-        }
-        return -1;
-    }
-    return execvp(file, argv);
-}
 
+	int ac = 0;
+	while (argv && argv[ac]) {
+		ac++;
+	}
+	int handled = 0;
+	int rc = kx_try_applet(file, ac, argv, &handled);
+	if (handled) {
+		_exit(rc);
+	}
+	if (strchr(file, '/')) {
+		static char resolved[PATH_MAX];
+		if (resolve_path(file, resolved, sizeof(resolved)) == 0) {
+			return execv(resolved, argv);
+		}
+		errno = ENOENT;
+		return -1;
+	}
+	return execvp(file, argv);
+}
 static void print_help(void) {
     puts("Built-in commands:");
     puts("  alias [name[=value]...]  - Define/list aliases");
@@ -1834,7 +1844,8 @@ static int run_command_string(const char *command) {
     return run_line_logic(line);
 }
 
-int main(int argc, char **argv) {
+int kxsh_main(int argc, char **argv) {
+
     signal(SIGINT, SIG_IGN);
 
     const char *path_env = getenv("PATH");
@@ -1853,12 +1864,12 @@ int main(int argc, char **argv) {
         }
     }
 
-    setenv("KSH_VERSION", "@(#)PD KSH v" KSH_VERSION, 0);
+    setenv("KXSH_VERSION", "@(#)PD KSH v" KXSH_VERSION, 0);
 
     if (argc > 2 && strcmp(argv[1], "-c") == 0) return run_command_string(argv[2]);
 
     if (argc > 1 && strcmp(argv[1], "--version") == 0) {
-        fprintf(stderr, "ksh (Kyronix Shell) %s\n", KSH_VERSION);
+        fprintf(stderr, "kxsh (Kyronix Shell) %s\n", KXSH_VERSION);
         return 0;
     }
 
@@ -1926,3 +1937,11 @@ int main(int argc, char **argv) {
     terminal_restore();
     return 0;
 }
+
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return kxsh_main(argc, argv);
+}
+#endif

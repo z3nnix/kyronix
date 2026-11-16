@@ -2,7 +2,9 @@
 #include "common.h"
 #include <sys/syscall.h>
 
-int main(int argc, char **argv) {
+int insmod_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "insmod";
     if (argc < 2) {
         fprintf(stderr, "usage: insmod MODULE [PARAMETER...]\n");
@@ -40,3 +42,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return insmod_main(argc, argv);
+}
+#endif

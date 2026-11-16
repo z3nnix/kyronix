@@ -257,7 +257,9 @@ static int copy_path(const char *source, const char *target, const cp_options_t 
     return rc;
 }
 
-int main(int argc, char **argv) {
+int cp_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "cp";
     cp_options_t o = { 0 };
     int first = 1;
@@ -329,3 +331,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return cp_main(argc, argv);
+}
+#endif

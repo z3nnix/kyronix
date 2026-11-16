@@ -1,5 +1,7 @@
 #include "common.h"
-int main(int argc, char **argv) {
+int which_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "which";
     if (argc < 2) kx_die("missing operand");
     const char *path = getenv("PATH");
@@ -21,3 +23,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return which_main(argc, argv);
+}
+#endif

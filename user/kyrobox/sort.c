@@ -102,7 +102,9 @@ static void parse_key(const char *val) {
     }
 }
 
-int main(int argc, char **argv) {
+int sort_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "sort";
     int i = 1;
     for (; i < argc; i++) {
@@ -175,3 +177,10 @@ int main(int argc, char **argv) {
     free(lines);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return sort_main(argc, argv);
+}
+#endif

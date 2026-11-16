@@ -69,7 +69,9 @@ static int make_link(const char *target, const char *link_name, const options_t 
     return 0;
 }
 
-int main(int argc, char **argv) {
+int ln_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "ln";
     options_t o = { 0 };
     int i = 1;
@@ -163,3 +165,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return ln_main(argc, argv);
+}
+#endif

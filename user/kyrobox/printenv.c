@@ -1,6 +1,9 @@
 #include "common.h"
 extern char **environ;
-int main(int argc, char **argv) {
+int printenv_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
+	kx_prog = "printenv";
     if (argc == 1) {
         for (char **e = environ; *e; e++) puts(*e);
         return 0;
@@ -15,3 +18,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return printenv_main(argc, argv);
+}
+#endif

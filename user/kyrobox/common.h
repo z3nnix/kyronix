@@ -29,11 +29,13 @@ static inline const char *kx_base(const char *s) {
 }
 
 static inline void kx_warn(const char *path) {
-    fprintf(stderr, "%s: %s: %s\n", kx_prog, path, strerror(errno));
+    const char *p = kx_prog ? kx_prog : "?";
+    fprintf(stderr, "%s: %s: %s\n", p, path ? path : "?", strerror(errno));
 }
 
 static inline void kx_die(const char *msg) {
-    fprintf(stderr, "%s: %s\n", kx_prog, msg);
+    const char *p = kx_prog ? kx_prog : "?";
+    fprintf(stderr, "%s: %s\n", p, msg ? msg : "?");
     exit(1);
 }
 

@@ -20,7 +20,9 @@ static void print_name(const char *path, const char *suffix, bool zero) {
     putchar(zero ? '\0' : '\n');
 }
 
-int main(int argc, char **argv) {
+int basename_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "basename";
     bool multiple = false;
     bool zero = false;
@@ -56,3 +58,10 @@ int main(int argc, char **argv) {
     for (; i < end; i++) print_name(argv[i], suffix, zero);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return basename_main(argc, argv);
+}
+#endif

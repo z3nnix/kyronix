@@ -29,7 +29,9 @@ static double parse_duration(const char *value) {
     return amount * scale;
 }
 
-int main(int argc, char **argv) {
+int sleep_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "sleep";
     if (argc < 2) kx_die("missing operand");
     if (strcmp(argv[1], "--help") == 0) {
@@ -53,3 +55,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return sleep_main(argc, argv);
+}
+#endif

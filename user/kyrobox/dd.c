@@ -1,5 +1,7 @@
 #include "common.h"
-int main(int argc, char **argv) {
+int dd_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "dd";
     const char *ifile = NULL, *ofile = NULL;
     size_t bs = 512;
@@ -41,3 +43,10 @@ int main(int argc, char **argv) {
     if (ofile) fclose(out);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return dd_main(argc, argv);
+}
+#endif

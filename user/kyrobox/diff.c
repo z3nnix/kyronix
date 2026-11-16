@@ -563,7 +563,9 @@ static int want_number(const char *s) {
     return 1;
 }
 
-int main(int argc, char **argv) {
+int diff_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "diff";
     opts_t o = { 0 };
     o.format = FMT_NORMAL;
@@ -751,3 +753,10 @@ int main(int argc, char **argv) {
     int rc = diff_one(pos[0], pos[1], &o);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return diff_main(argc, argv);
+}
+#endif

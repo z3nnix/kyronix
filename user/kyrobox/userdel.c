@@ -128,7 +128,9 @@ static char *get_home_dir(const char *login) {
     return pw ? strdup(pw->pw_dir) : NULL;
 }
 
-int main(int argc, char **argv) {
+int userdel_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "userdel";
 
     int remove_home = 0;
@@ -175,3 +177,10 @@ int main(int argc, char **argv) {
     printf("userdel: user '%s' removed\n", login);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return userdel_main(argc, argv);
+}
+#endif

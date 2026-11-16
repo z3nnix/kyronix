@@ -102,7 +102,9 @@ static int move_one(const char *source, const char *target, const mv_options_t *
     return 0;
 }
 
-int main(int argc, char **argv) {
+int mv_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "mv";
     mv_options_t o = { 0 };
     int first = 1;
@@ -164,3 +166,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return mv_main(argc, argv);
+}
+#endif

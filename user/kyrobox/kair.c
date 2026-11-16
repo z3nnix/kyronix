@@ -432,7 +432,9 @@ static void free_env(char **env) {
     free(env);
 }
 
-int main(int argc, char **argv) {
+int kair_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
 
     int ai = 1;
@@ -858,3 +860,10 @@ cleanup:
     if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return kair_main(argc, argv);
+}
+#endif

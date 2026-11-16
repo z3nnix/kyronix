@@ -1,5 +1,7 @@
 #include "common.h"
-int main(int argc, char **argv) {
+int link_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "link";
     if (argc != 3) kx_die("usage: link FILE LINK");
     if (link(argv[1], argv[2]) < 0) {
@@ -8,3 +10,10 @@ int main(int argc, char **argv) {
     }
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return link_main(argc, argv);
+}
+#endif

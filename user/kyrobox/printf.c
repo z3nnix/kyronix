@@ -201,7 +201,9 @@ static int emit_format(const char *fmt, int argc, char **argv, int *argp) {
     return *argp - start_arg;
 }
 
-int main(int argc, char **argv) {
+int printf_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "printf";
     int first = 1;
     if (first < argc && strcmp(argv[first], "--") == 0) first++;
@@ -215,3 +217,10 @@ int main(int argc, char **argv) {
     } while (arg < argc && !stop_output);
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return printf_main(argc, argv);
+}
+#endif

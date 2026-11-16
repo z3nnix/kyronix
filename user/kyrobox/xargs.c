@@ -30,7 +30,9 @@ static void flush(char **words, int nwords) {
     free(av);
 }
 
-int main(int argc, char **argv) {
+int xargs_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "xargs";
     int i = 1;
     long max_args = MAX_ARGS;
@@ -100,3 +102,10 @@ int main(int argc, char **argv) {
     free(line);
     return g_rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return xargs_main(argc, argv);
+}
+#endif

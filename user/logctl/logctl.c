@@ -13,7 +13,7 @@ static void usage(void) {
     fprintf(stderr, "  -h        show help\n");
 }
 
-int main(int argc, char **argv) {
+int logctl_main(int argc, char **argv) {
     char tag[32] = "logctl";
     int first = 1;
 
@@ -75,3 +75,10 @@ int main(int argc, char **argv) {
     fclose(log);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return logctl_main(argc, argv);
+}
+#endif

@@ -16,7 +16,9 @@ static void usage(void) {
     fprintf(stderr, "usage: %s [-m] [-u] [-i] [--] cmd args...\n", kx_prog);
 }
 
-int main(int argc, char **argv) {
+int unshare_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
     int flags = 0;
     int i = 1;
@@ -36,3 +38,10 @@ int main(int argc, char **argv) {
     kx_warn(argv[i]);
     return 127;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return unshare_main(argc, argv);
+}
+#endif

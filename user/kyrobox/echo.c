@@ -81,7 +81,10 @@ static bool print_escaped(const char *s) {
     return true;
 }
 
-int main(int argc, char **argv) {
+int echo_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
+	kx_prog = "echo";
     bool newline = true, escapes = false;
     int i = 1;
     for (; i < argc; i++) {
@@ -115,3 +118,10 @@ int main(int argc, char **argv) {
     if (newline) putchar('\n');
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return echo_main(argc, argv);
+}
+#endif

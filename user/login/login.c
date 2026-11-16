@@ -113,7 +113,9 @@ static int check_password(const char *user, const char *pass) {
     return enc && strcmp(enc, pw->pw_passwd) == 0;
 }
 
-int main(void) {
+int login_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     struct passwd *pw;
     struct utsname uts;
     int first = 1;
@@ -193,3 +195,10 @@ int main(void) {
         return 1;
     }
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return login_main(argc, argv);
+}
+#endif

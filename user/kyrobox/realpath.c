@@ -12,7 +12,9 @@ static int print_realpath(const char *path) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int realpath_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "realpath";
     int first = 1;
     if (first < argc && strcmp(argv[first], "--") == 0) first++;
@@ -21,3 +23,10 @@ int main(int argc, char **argv) {
     for (int i = first; i < argc; i++) rc |= print_realpath(argv[i]);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return realpath_main(argc, argv);
+}
+#endif

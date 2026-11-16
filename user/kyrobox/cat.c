@@ -59,7 +59,9 @@ static int copy_stream(FILE *input, cat_options_t *o) {
     return ferror(input) ? -1 : 0;
 }
 
-int main(int argc, char **argv) {
+int cat_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "cat";
     cat_options_t o = { .line = 1, .at_line_start = true };
     int first = 1;
@@ -130,3 +132,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return cat_main(argc, argv);
+}
+#endif

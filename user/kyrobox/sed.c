@@ -275,7 +275,9 @@ static void process_lines(char **lines, long n, FILE *out, bool suppress) {
     }
 }
 
-int main(int argc, char **argv) {
+int sed_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "sed";
     bool opt_i = false, suppress = false;
     char *i_suffix = NULL;
@@ -361,3 +363,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return sed_main(argc, argv);
+}
+#endif

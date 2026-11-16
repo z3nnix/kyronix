@@ -3,7 +3,9 @@
 
 static void usage(void) { fprintf(stderr, "usage: %s [-f] [-l] mountpoint\n", kx_prog); }
 
-int main(int argc, char **argv) {
+int umount_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
     int flags = 0;
     int ai = 1;
@@ -37,3 +39,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return umount_main(argc, argv);
+}
+#endif

@@ -29,7 +29,9 @@ static const char *basename_from_url(const char *url) {
     return "index.html";
 }
 
-int main(int argc, char **argv) {
+int wget_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "wget";
     const char *outfile = NULL;
     const char *url = NULL;
@@ -178,3 +180,10 @@ int main(int argc, char **argv) {
 
     return (status >= 200 && status < 300) ? 0 : 1;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return wget_main(argc, argv);
+}
+#endif

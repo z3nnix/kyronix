@@ -197,7 +197,9 @@ static void print_tree(const char *path, int depth, const char *prefix, bool las
     free(entries);
 }
 
-int main(int argc, char **argv) {
+int tree_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "tree";
     bool full_path = false;
     bool follow = false;
@@ -276,3 +278,10 @@ int main(int argc, char **argv) {
     if (out_file) fclose(out_file);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return tree_main(argc, argv);
+}
+#endif

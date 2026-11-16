@@ -206,7 +206,9 @@ static void draw(bool interactive) {
     fflush(stdout);
 }
 
-int main(int argc, char **argv) {
+int top_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "top";
     int i = 1;
     for (; i < argc; i++) {
@@ -267,3 +269,10 @@ int main(int argc, char **argv) {
     restore_term();
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return top_main(argc, argv);
+}
+#endif

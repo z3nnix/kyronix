@@ -30,7 +30,9 @@ static void print_char(int c) {
         printf("\\%03o", (unsigned char) c);
 }
 
-int main(int argc, char **argv) {
+int cmp_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "cmp";
     bool print_bytes = false, list = false, silent = false;
     unsigned long long limit = ULLONG_MAX, skip1 = 0, skip2 = 0;
@@ -164,3 +166,10 @@ int main(int argc, char **argv) {
     if (b != stdin) fclose(b);
     return different;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return cmp_main(argc, argv);
+}
+#endif

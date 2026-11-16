@@ -23,7 +23,9 @@ static int parse_id(const char *s, int group, uid_t *uid, gid_t *gid) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+int chown_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "chown";
     if (argc < 3) kx_die("usage: chown OWNER[:GROUP] FILE...");
     char spec[128];
@@ -45,3 +47,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return chown_main(argc, argv);
+}
+#endif

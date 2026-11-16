@@ -160,7 +160,9 @@ static void print_column(column_t c, const process_t *p) {
     }
 }
 
-int main(int argc, char **argv) {
+int ps_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "ps";
     bool full = false, long_format = false, user_format = false;
     for (int i = 1; i < argc; i++) {
@@ -278,3 +280,10 @@ int main(int argc, char **argv) {
     }
     return ferror(stdout) ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return ps_main(argc, argv);
+}
+#endif

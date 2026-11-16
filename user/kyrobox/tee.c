@@ -1,5 +1,7 @@
 #include "common.h"
-int main(int argc, char **argv) {
+int tee_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "tee";
     bool append = false;
     int first = 1;
@@ -28,3 +30,10 @@ int main(int argc, char **argv) {
     free(outs);
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return tee_main(argc, argv);
+}
+#endif

@@ -302,7 +302,9 @@ static void usage(void) {
     fprintf(stderr, "  (no args) interactive mode\n");
 }
 
-int main(int argc, char **argv) {
+int fdisk_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = kx_base(argv[0]);
     int flag_list = 0, flag_write = 0, flag_new = 0;
     int del_part = -1;
@@ -414,3 +416,10 @@ int main(int argc, char **argv) {
     close(fd);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return fdisk_main(argc, argv);
+}
+#endif

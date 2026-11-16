@@ -393,7 +393,7 @@ static void reload_config(void) {
     for (int i = 0; i < nservices; i++) release_service(&services[i]);
 }
 
-int main(int argc, char **argv) {
+int init_main(int argc, char **argv) {
     if (argc > 1 && argv[1] && argv[1][0]) {
         snprintf(rc_conf_path, sizeof(rc_conf_path), "%s", argv[1]);
     }
@@ -422,7 +422,7 @@ int main(int argc, char **argv) {
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
     setenv("HOME", "/", 1);
-    setenv("SHELL", "/bin/ksh", 1);
+    setenv("SHELL", "/bin/kxsh", 1);
     setenv("TERM", "xterm-color", 1);
     setenv("XDG_RUNTIME_DIR", "/run/user/0", 1);
     setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/0/bus", 1);
@@ -464,3 +464,10 @@ int main(int argc, char **argv) {
         }
     }
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return init_main(argc, argv);
+}
+#endif

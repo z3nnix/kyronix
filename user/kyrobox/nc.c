@@ -49,7 +49,9 @@ static void relay(int sock) {
     }
 }
 
-int main(int argc, char **argv) {
+int nc_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "nc";
     int listen_mode = 0, udp = 0;
     const char *src_port = NULL;
@@ -174,3 +176,10 @@ int main(int argc, char **argv) {
     close(sock);
     return 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return nc_main(argc, argv);
+}
+#endif

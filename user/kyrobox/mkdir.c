@@ -49,7 +49,9 @@ static int make_parents(const char *path, mode_t final_mode, bool explicit_mode,
     return 0;
 }
 
-int main(int argc, char **argv) {
+int mkdir_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "mkdir";
     bool parents = false, verbose = false, explicit_mode = false;
     mode_t mode = 0777;
@@ -108,3 +110,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return mkdir_main(argc, argv);
+}
+#endif

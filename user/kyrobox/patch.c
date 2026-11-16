@@ -550,7 +550,9 @@ static void usage(void) {
            "[-d DIR] [-r FILE] [--dry-run] [FILE]");
 }
 
-int main(int argc, char **argv) {
+int patch_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "patch";
     popts_t o = { 0 };
 
@@ -658,3 +660,10 @@ int main(int argc, char **argv) {
     if (!applied_any) kx_die("no patch data found");
     return overall_fail ? 1 : 0;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return patch_main(argc, argv);
+}
+#endif

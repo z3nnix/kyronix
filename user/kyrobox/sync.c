@@ -6,7 +6,9 @@ static void usage(void) {
     exit(1);
 }
 
-int main(int argc, char **argv) {
+int sync_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "sync";
     int mode = 0;
     int first = 1;
@@ -48,3 +50,10 @@ int main(int argc, char **argv) {
     }
     return rc;
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return sync_main(argc, argv);
+}
+#endif

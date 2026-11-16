@@ -221,7 +221,9 @@ static unsigned parse_interval(const char *value) {
     return (unsigned) interval;
 }
 
-int main(int argc, char **argv) {
+int ntpd_main(int argc, char **argv) {
+	(void)argc;
+	(void)argv;
     kx_prog = "ntpd";
     bool once = false;
     bool quiet = false;
@@ -286,3 +288,10 @@ int main(int argc, char **argv) {
         sleep(synced ? interval : 15);
     }
 }
+
+#ifndef KX_MONOLITHIC
+int main(int argc, char **argv) {
+
+	return ntpd_main(argc, argv);
+}
+#endif
