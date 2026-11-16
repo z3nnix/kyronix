@@ -1,2 +1,2 @@
 #pragma once
-#define KERNEL_VERSION "0.3"
+#define KERNEL_VERSION "0.4"
